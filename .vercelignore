@@ -20,3 +20,4 @@ package.json
 package-lock.json
 skills-lock.json
 dist
+vercel-upload*.env

@@ -129,6 +129,25 @@ login and authorization are implemented.
 
 ## Optional AI provider
 
+The proposal and BRD stages now integrate the generation core from
+`wooplix15-debug/proposalagent`, pinned to commit
+`0ab21f9c70ced79c93bed2b18f1f71d6831c259a`. Its supervisor, parallel specialists,
+writer, source validation, quality critic and bounded repair run inside the
+project workflow. With `PROPOSAL_ENGINE=auto` and a Groq key, these stages use
+the integrated graph; without the key they use templates. Set
+`PROPOSAL_ENGINE=langgraph` to require live Groq generation explicitly.
+
+Integrated outputs retain their source links, quality reports and nested graph
+trace. The proposal and BRD supply context to downstream agents. Artifact cards
+now offer Word downloads from saved content; proposal/BRD use the original
+branded renderers. `/api/proposal-agent/workflow` exposes the actual nested
+graph topology without invoking a model.
+
+See [AI_ENGINEERING_REVIEW.md](AI_ENGINEERING_REVIEW.md) for findings and the
+remaining reliability/access-control work. This integration covers the source
+generation core and Word exports. Its separate Telegram delivery, PHP PDF
+service and persistent standalone case API are not enabled in this workspace.
+
 Set either `GROQ_API_KEY` with `GROQ_MODEL`, or `OPENAI_API_KEY` with `AI_MODEL`,
 in `.env.local` and Vercel settings. Groq takes precedence if both keys exist.
 Without a key, the deterministic planning workflow works offline.

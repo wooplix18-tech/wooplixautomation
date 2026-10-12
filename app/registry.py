@@ -36,7 +36,7 @@ AGENT_CATALOG = [
         role="Create the commercial delivery proposal",
         stage="Proposal",
         description="Turns approved scope into a reviewable proposal with assumptions and open decisions.",
-        responsibilities=["Define scope and deliverables", "Document assumptions", "Expose planning targets and decisions"],
+        responsibilities=["Define source-grounded scope and deliverables", "Run proposal-agent specialists", "Validate findings with a quality critic"],
         allowed_tools=["requirement_register", "delivery_benchmarks"],
         input_contract="ApprovedRequirementRegister",
         output_contract="ProposalArtifact",
@@ -280,7 +280,16 @@ WORKFLOW_TASKS = [
 
 
 def agent_catalog() -> list[dict]:
-    return [agent.model_dump(mode="json") for agent in AGENT_CATALOG]
+    from .proposal_integration import proposal_engine
+    integrated = proposal_engine() == "langgraph"
+    rows = [agent.model_dump(mode="json") for agent in AGENT_CATALOG]
+    if integrated:
+        for row in rows:
+            if row["id"] in {"solution_architect", "quality_critic"}:
+                row["status"] = "active"
+                row["description"] += " Runs within the integrated proposal/BRD generation graph."
+                row["execution_key"] = "proposal_brd_subgraph"
+    return rows
 
 
 def workflow_tasks() -> list[dict]:

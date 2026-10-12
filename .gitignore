@@ -18,3 +18,5 @@ node_modules/
 .vercel/
 dist/
 *.egg-info/
+.vercel
+vercel-upload*.env

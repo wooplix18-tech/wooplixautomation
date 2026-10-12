@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Wooplix AI SDLC</title>
+  <title>Wooplix</title>
   <style>
     :root { --ink:#e9eef7; --muted:#93a3bb; --panel:#111a2b; --panel-2:#18243a; --line:#263653; --accent:#66e4c2; --accent-2:#8f7cff; --danger:#ff8c9b; --shadow:0 24px 70px #02061066; }
     * { box-sizing:border-box; }
@@ -103,15 +103,65 @@
     .inquiry-status { font-size:12px; color:var(--accent); }
     @media(max-width:1050px) { .inquiry-layout { grid-template-columns:1fr; } .chat-messages { max-height:420px; } }
     @media(max-width:580px) { .chat-top,.chat-compose { padding:16px; } .chat-messages { padding:16px; } .chat-message { max-width:100%; } }
+
+    /* Keep the first screen focused on one action: explain the work. */
+    :root { --ink:#172033; --muted:#657187; --panel:#fff; --panel-2:#f5f7fb; --line:#e2e7ef; --accent:#087f68; --accent-2:#5169d8; --danger:#c63d51; --shadow:0 10px 34px #1c2b4410; }
+    body { background:#f6f8fb; }
+    aside { background:#fff; border-color:var(--line); }
+    .logo { color:#fff; background:#087f68; border-radius:10px; }
+    .brand small { color:#778297; }
+    .side-label { color:#8993a5; }
+    .project { color:#273247; }
+    .project:hover,.project.active { background:#f3f6fa; border-color:#e2e7ef; }
+    .project-meta,.muted,.subtitle,.agent-card small,.artifact small { color:#657187; }
+    .new-project { color:#087f68; background:#f6fbf9; border-color:#b7d8cf; }
+    .eyebrow { color:#087f68; }
+    .badge { color:#455268; background:#edf2f7; }
+    .badge::before { background:#08a582; }
+    .card { background:#fff; border-color:#e2e7ef; box-shadow:0 10px 34px #1c2b4408; }
+    .button { color:#fff; background:#087f68; }
+    .button.secondary { color:#243047; background:#edf1f6; }
+    .button.ghost { color:#087f68; border-color:#c8d8d4; }
+    input,textarea,select { color:#172033; border-color:#d7deea; background:#fff; }
+    input:focus,textarea:focus,select:focus { border-color:#087f68; box-shadow:0 0 0 3px #087f6818; }
+    .inquiry-layout { display:block; max-width:860px; margin:0 auto; }
+    .chat-card { border-radius:18px; }
+    .chat-top { background:#fff; padding:17px 22px; }
+    .chat-top h2 { font-size:16px; }
+    .chat-messages { min-height:210px; max-height:440px; padding:22px; background:#fff; }
+    .chat-message { color:#29354a; background:#f3f6fa; border-color:#e6ebf2; }
+    .chat-message.user { color:#064a3e; background:#e6f5f0; border-color:#cce9df; }
+    .chat-message strong { color:#087f68; }
+    .chat-compose { background:#fff; }
+    .chat-compose textarea { min-height:96px; }
+    .upload-label { color:#455268; border-color:#d7deea; }
+    .inquiry-summary { margin-top:14px; padding:18px 20px !important; gap:12px; background:#fff !important; border-color:#e2e7ef !important; box-shadow:var(--shadow); }
+    .inquiry-summary > div:first-child { display:none; }
+    .inquiry-summary > p:first-of-type { display:none; }
+    .inquiry-summary .deliverable-list { display:none; }
+    .inquiry-summary .inquiry-status { margin:0; }
+    .inquiry-summary #generate-inquiry { width:100%; min-height:46px; font-size:15px; }
+    .inquiry-summary > p:last-child { margin:0; }
+    .inquiry-summary .button.ghost { justify-self:start; border:0; padding:5px 0; }
+    .deliverables-disclosure { border-top:1px solid var(--line); padding-top:10px; }
+    .deliverables-disclosure summary { cursor:pointer; color:#526078; font-size:12px; font-weight:650; }
+    .deliverables-disclosure .deliverable-list { display:grid; margin:10px 0 0; font-size:12px; }
+    .upload-file-name { color:#087f68; font-size:12px; margin-top:8px; }
+    .project-extra > summary { cursor:pointer; color:#415069; font-size:14px; font-weight:700; }
+    .project-extra-content { display:grid; gap:20px; margin-top:18px; }
+    .extra-list { display:grid; gap:8px; max-height:300px; overflow:auto; }
+    .project-extra-content .agent-list { margin-top:10px; }
+    @media(max-width:900px) { .inquiry-layout { max-width:860px; } }
+    @media(max-width:580px) { aside { padding:12px 14px; } .brand { padding:0 4px 11px; } .side-label { display:none; } .project-list { max-height:48px; } .project { min-width:160px; padding:8px 9px; } .new-project { margin-top:8px; padding:8px 10px; } main { padding-top:22px; } .chat-top { align-items:flex-start; } .inquiry-summary { padding:15px !important; } }
   </style>
 </head>
 <body>
   <div class="shell">
     <aside>
-      <div class="brand"><div class="logo">W</div><div><strong>Wooplix</strong><small>AI software delivery</small></div></div>
+      <div class="brand"><div class="logo">W</div><div><strong>Wooplix</strong></div></div>
       <div class="side-label">Projects</div>
       <div id="project-list" class="project-list"><div class="muted small" style="padding:10px">Loading workspace…</div></div>
-      <button class="new-project" onclick="showCreate(true)">＋ New inquiry</button>
+      <button class="new-project" onclick="showCreate(true)">＋ New project</button>
     </aside>
     <main id="main"></main>
   </div>
@@ -159,9 +209,9 @@
       }
     }
     function toast(message) { const node=document.querySelector('#toast'); node.textContent=message; node.hidden=false; setTimeout(()=>node.hidden=true, 3800); }
-    async function loadProjects() { const [projectResponse, agentResponse]=await Promise.all([api('/projects'), api('/agents')]); projects=projectResponse.projects; agentCatalog=agentResponse.agents; renderProjectList(); if(selected) { const exists=projects.find(p=>p.id===selected.id); if(exists) await selectProject(selected.id); } else if(!document.querySelector('#chat-form') && !document.querySelector('#create-form')) showCreate(); }
-    function renderProjectList() { document.querySelector('#project-list').innerHTML=projects.length ? projects.map(p=>`<button class="project ${selected?.id===p.id?'active':''}" onclick="selectProject('${p.id}')"><div class="project-name">${esc(p.project_name)}</div><div class="project-meta">${esc(p.status.replaceAll('_',' '))} · ${p.artifact_count} artifacts</div></button>`).join('') : '<div class="muted small" style="padding:10px">No projects yet.</div>'; }
-    function showAdvancedCreate() { selected=null; renderProjectList(); document.querySelector('#main').innerHTML=`<div class="topline"><div><p class="eyebrow">Start with the outcome</p><h1>Turn a brief into a product.</h1><p class="subtitle">A coordinated team of AI agents moves from client requirements through proposal, BRD, design, development, testing, documentation, and handover.</p></div><span class="badge">7 specialist agents · automatic workflow</span></div><div class="card"><div class="card-header"><div><h2>New delivery workspace</h2><div class="muted small">Add enough context for the agents to produce a useful first pass. Unknowns stay visible as open decisions.</div></div></div><form id="create-form"><div class="form-grid"><label>Project name<input name="project_name" required minlength="2" maxlength="120" placeholder="e.g. Field service portal"></label><label>Client name<input name="client_name" maxlength="120" value="Client"></label><label>Project type<select name="project_type"><option value="website">Website</option><option value="mobile_app">Mobile application</option><option value="software_product" selected>Software product</option><option value="internal_tool">Internal tool</option></select></label><label>Workflow<select name="execution_mode"><option value="automatic" selected>Generate everything automatically</option><option value="reviewed">Pause for review at each checkpoint</option></select></label><label>Timeline<input name="timeline" placeholder="e.g. Q3 launch"></label><label class="full">Client brief<textarea name="brief" required minlength="20" maxlength="30000" placeholder="Describe the problem, desired outcome, key capabilities, and how success will be recognized."></textarea></label><label>Business goals<textarea name="goals" placeholder="One goal per line"></textarea></label><label>Target users<textarea name="target_users" placeholder="One user group per line"></textarea></label><label>Platforms<textarea name="platforms" placeholder="Web, iOS, Android, admin…"></textarea></label><label>Integrations<textarea name="integrations" placeholder="CRM, payments, APIs…"></textarea></label><label>Constraints<textarea name="constraints" placeholder="Compliance, brand, budget, technical constraints…"></textarea></label><label>Brand preferences<textarea name="brand_preferences" placeholder="Tone, colors, existing design system…"></textarea></label><label>Budget<input name="budget" placeholder="To be confirmed"></label></div><div class="actions"><button class="button" type="submit">Create workspace →</button><span class="muted small" style="align-self:center">Automatic mode generates the complete delivery pack from your requirements.</span></div></form></div>`; document.querySelector('#create-form').onsubmit=createProject; }
+    async function loadProjects() { const [projectResponse, agentResponse]=await Promise.all([api('/projects'), api('/agents')]); projects=projectResponse.projects; agentCatalog=agentResponse.agents; intakeAI=!!agentResponse.ai_provider_configured; renderProjectList(); if(!selected&&!intakeBusy&&document.querySelector('#chat-form')) renderInquiry(); if(selected) { const exists=projects.find(p=>p.id===selected.id); if(exists) await selectProject(selected.id); } else if(!document.querySelector('#chat-form') && !document.querySelector('#create-form')) showCreate(); }
+    function renderProjectList() { document.querySelector('#project-list').innerHTML=projects.length ? projects.map(p=>`<button class="project ${selected?.id===p.id?'active':''}" onclick="selectProject('${p.id}')"><div class="project-name">${esc(p.project_name)}</div><div class="project-meta">${esc(p.status.replaceAll('_',' '))}</div></button>`).join('') : '<div class="muted small" style="padding:10px">No projects yet.</div>'; }
+    function showAdvancedCreate() { selected=null; renderProjectList(); document.querySelector('#main').innerHTML=`<div class="topline"><div><p class="eyebrow">New project</p><h1>Project details</h1></div></div><div class="card"><form id="create-form"><div class="form-grid"><label>Project name<input name="project_name" required minlength="2" maxlength="120" placeholder="e.g. Field service portal"></label><label>Client name<input name="client_name" maxlength="120" value="Client"></label><label>Project type<select name="project_type"><option value="website">Website</option><option value="mobile_app">Mobile application</option><option value="software_product" selected>Software product</option><option value="internal_tool">Internal tool</option></select></label><label>Workflow<select name="execution_mode"><option value="automatic" selected>Automatic</option><option value="reviewed">Review each step</option></select></label><label>Timeline<input name="timeline" placeholder="Optional"></label><label class="full">Requirements<textarea name="brief" required minlength="20" maxlength="30000" placeholder="What should be built? Include the main features and who will use it."></textarea></label><label>Goals<textarea name="goals" placeholder="One per line"></textarea></label><label>Users<textarea name="target_users" placeholder="One group per line"></textarea></label><label>Platforms<textarea name="platforms" placeholder="Web, iOS, Android…"></textarea></label><label>Integrations<textarea name="integrations" placeholder="CRM, payments, APIs…"></textarea></label><label>Constraints<textarea name="constraints" placeholder="Technical, legal, or budget limits…"></textarea></label><label>Brand<textarea name="brand_preferences" placeholder="Colors, tone, or design system…"></textarea></label><label>Budget<input name="budget" placeholder="Optional"></label></div><div class="actions"><button class="button" type="submit">Create project →</button></div></form></div>`; document.querySelector('#create-form').onsubmit=createProject; }
     function showCreate(reset=false) {
       if(intakeBusy) return toast('Please wait for the current inquiry request to finish.');
       selected=null;
@@ -170,34 +220,34 @@
       renderInquiry();
     }
     function renderInquiry() {
-      const greeting="Hi, I'm your Wooplix project assistant. Tell me what you want to build, paste all your requirements, or upload a document. I'll collect the details and prepare the delivery pack.";
+      const greeting="Hi! What do you need built? Paste your brief or attach a requirements file.";
       const messages=[{role:'assistant',content:greeting},...intakeMessages];
       document.querySelector('#main').innerHTML=`
-        <div class="topline"><div><p class="eyebrow">Your idea starts here</p><h1>Tell us what you want to build.</h1><p class="subtitle">Share one brief or requirements document. Your AI team turns it into a complete delivery plan.</p></div><span class="badge">One inquiry · complete delivery pack</span></div>
+        <div class="topline"><div><h1>What do you need built?</h1><p class="subtitle">Describe it or attach your requirements. I’ll ask if anything is unclear.</p></div></div>
         <div class="inquiry-layout">
           <section class="card chat-card" aria-label="Project inquiry chat">
-            <div class="chat-top"><div><h2>Project assistant</h2><span class="muted small">Requirements, questions, and next steps in one conversation.</span></div><span class="badge">${intakeAI?'AI connected':'Guided intake'}</span></div>
+            <div class="chat-top"><div><h2>Chat</h2><span class="muted small">${intakeAI?'Assistant ready':''}</span></div></div>
             <div id="chat-messages" class="chat-messages" role="log" aria-live="polite" aria-label="Inquiry conversation">${messages.map(m=>`<div class="chat-message ${m.role==='user'?'user':''}"><strong>${m.role==='user'?'You':'Wooplix assistant'}</strong>${esc(m.display || m.content)}</div>`).join('')}${intakeBusy?'<div class="chat-message pending">Working on your inquiry…</div>':''}</div>
             <form id="chat-form" class="chat-compose">
-              <label>Your message<textarea id="chat-input" name="message" maxlength="30000" placeholder="I need a website where customers can book services, pay online, and track their requests…" ${intakeBusy?'disabled':''}>${esc(intakeComposer)}</textarea></label>
+              <label>Your message<textarea id="chat-input" name="message" maxlength="30000" placeholder="Describe what you need…" ${intakeBusy?'disabled':''}>${esc(intakeComposer)}</textarea></label>
               <div class="actions"><label class="upload-label">＋ Attach requirements<input id="requirements-file" type="file" accept=".txt,.md,.pdf,.docx" aria-label="Upload requirements document" ${intakeBusy?'disabled':''}></label><button class="button" type="submit" ${intakeBusy?'disabled':''}>Send message →</button></div>
-              <span class="muted small">TXT, Markdown, PDF, or Word (.docx) · up to 2 MB. Enter sends; Shift+Enter adds a line.</span>
+              <span class="muted small">TXT, MD, PDF, DOCX · max 2 MB</span>
             </form>
           </section>
-          <aside class="card inquiry-summary" style="border:1px solid var(--line);background:linear-gradient(145deg,#121d31,#0f1829);padding:22px;border-radius:16px">
-            <div><p class="eyebrow">From inquiry to delivery</p><h2>Your project brief</h2></div>
-            <p class="muted">${intakeDraft?'Your requirements are collected below. Answer the assistant or start generation whenever you are ready.':'Start the conversation or attach your requirements. The assistant will organize your brief here.'}</p>
-            ${intakeDraft?`<label>Project name<input id="inquiry-project-name" value="${esc(intakeDraft.project_name)}" minlength="2" maxlength="120" ${intakeBusy?'disabled':''}></label><p class="inquiry-status">${intakeReady?'Ready to generate':'Brief collected · follow-up questions optional'}</p><p class="muted small">${intakeDraft.brief.length.toLocaleString()} characters collected${intakeSourceFilename?' · '+esc(intakeSourceFilename):''}</p><label>Workflow<select id="inquiry-mode" ${intakeBusy?'disabled':''}><option value="automatic">Generate everything automatically</option><option value="reviewed">Pause for human review</option></select></label>`:''}
-            <div><h3>What your AI team prepares</h3><ul class="deliverable-list"><li>Requirements and proposal</li><li>Business requirements document</li><li>UI/UX specification</li><li>Implementation blueprint</li><li>Testing and UAT plan</li><li>Documentation and training plan</li><li>Complete handover pack</li></ul></div>
-            <button id="generate-inquiry" class="button" ${!intakeDraft||intakeBusy?'disabled':''}>${intakeBusy?'Working…':'Generate delivery pack →'}</button>
-            <p class="muted small">Automatic mode runs all planning agents from your brief without approval stops.</p>
-            <button class="button ghost" id="advanced-inquiry" ${intakeBusy?'disabled':''}>Use detailed form</button>
-          </aside>
+          ${intakeDraft?`<section class="card inquiry-summary" aria-label="Project settings">
+            <label>Project name<input id="inquiry-project-name" value="${esc(intakeDraft.project_name)}" minlength="2" maxlength="120" ${intakeBusy?'disabled':''}></label>
+            <p class="inquiry-status">${intakeReady?'Ready to create':'You can create this project now'}${intakeSourceFilename?' · '+esc(intakeSourceFilename):''}</p>
+            <button id="generate-inquiry" class="button" ${intakeBusy?'disabled':''}>${intakeBusy?'Preparing…':'Create my project →'}</button>
+            <details class="deliverables-disclosure"><summary>Included in your project pack</summary><ul class="deliverable-list"><li>Proposal and requirements</li><li>Design and implementation plan</li><li>Test plan</li><li>Documentation and handover</li></ul></details>
+            <button class="button ghost" id="advanced-inquiry" ${intakeBusy?'disabled':''}>Add project details</button>
+          </section>`:''}
         </div>`;
       document.querySelector('#chat-form').onsubmit=sendInquiry;
       document.querySelector('#requirements-file').onchange=uploadRequirements;
-      document.querySelector('#generate-inquiry').onclick=generateInquiry;
-      document.querySelector('#advanced-inquiry').onclick=showAdvancedCreate;
+      const generateButton=document.querySelector('#generate-inquiry');
+      if(generateButton) generateButton.onclick=generateInquiry;
+      const advancedButton=document.querySelector('#advanced-inquiry');
+      if(advancedButton) advancedButton.onclick=showAdvancedCreate;
       const composer=document.querySelector('#chat-input');
       composer.oninput=()=>{intakeComposer=composer.value;};
       composer.onkeydown=event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault(); document.querySelector('#chat-form').requestSubmit();}};
@@ -240,7 +290,7 @@
       if(intakeBusy||!intakeDraft) return;
       const name=document.querySelector('#inquiry-project-name').value.trim();
       if(name.length<2) return toast('Give your project a name with at least two characters.');
-      const mode=document.querySelector('#inquiry-mode').value;
+      const mode='automatic';
       const body={...intakeDraft,project_name:name,execution_mode:mode};
       intakeBusy=true; renderInquiry();
       try {
@@ -272,9 +322,25 @@
       return `<div class="steps">${visible.map(stage=>`<div class="step ${stageClass(stage[0])}"><span class="step-dot"></span>${automatic&&stage[0]==='handover'?'Delivery pack':stage[1]}</div>`).join('')}</div>`;
     }
     function agentTeamMarkup() { return `<div class="agent-list">${agentCatalog.map(agent=>`<div class="agent-card"><strong>${esc(agent.name)}</strong><small>${esc(agent.role)} · ${esc(agent.stage)}</small><p>${esc(agent.description)}</p><span class="agent-status ${esc(agent.status)}">${esc(agent.status)}</span></div>`).join('')}</div>`; }
-    function gateCard(gate) { if(!gate) return ''; const isUat=gate.stage==='uat'; return `<div class="card gate"><div class="card-header"><div><p class="eyebrow">Human checkpoint</p><h2>${esc(gate.title)}</h2></div><span class="badge">Action needed</span></div><p class="muted">${esc(gate.description)}</p>${gate.questions.map(q=>`<div class="question">${esc(q)}</div>`).join('')}<form id="gate-form"><label>Feedback / decision notes<textarea name="feedback" placeholder="Add decisions, evidence, or requested changes…"></textarea></label><div class="actions"><button class="button" name="decision" value="${isUat?'pass':'approve'}">${isUat?'Pass UAT & hand over':'Approve & continue'}</button>${isUat?'<button class="button secondary" name="decision" value="fail">Fail UAT</button>':''}<button class="button secondary" name="decision" value="request_changes">Request changes</button><button class="button danger" name="decision" value="reject">Reject / stop</button></div></form></div>`; }
-    function artifactCard(artifact) { return `<div class="artifact"><strong>${esc(artifact.title)}</strong><small>v${artifact.version} · ${esc(artifact.generated_by.join(', '))}</small><br><button onclick="showArtifact('${artifact.kind}')">Open artifact</button></div>`; }
-    function renderDetail() { if(!selected) return showCreate(); const input=selected.input; const gate=selected.gates.find(g=>g.id===selected.active_gate_id); const metric=selected.metrics||{}; document.querySelector('#main').innerHTML=`<div class="topline"><div><p class="eyebrow">${esc(input.client_name)} · ${esc(input.project_type.replaceAll('_',' '))}</p><h1>${esc(input.project_name)}</h1><p class="subtitle">${esc(input.brief.length>450?input.brief.slice(0,450)+'…':input.brief)}</p></div><span class="badge">${esc(selected.status.replaceAll('_',' '))}</span></div><div class="grid"><div class="card">${renderSteps()}</div>${gate?gateCard(gate):''}${selected.status==='pack_ready'?'<div class="card"><h2>Your delivery pack is ready</h2><p class="muted">All seven planning deliverables have been generated. Open them below to review the scope, design, implementation blueprint, and test plan.</p></div>':''}${selected.error?`<div class="card" role="alert"><h2>Workflow needs attention</h2><p>${esc(selected.error)}</p></div>`:''}<div class="card"><div class="card-header"><div><h2>Delivery cockpit</h2><div class="muted small">A source-grounded artifact pack with a visible audit trail.</div></div></div><div class="stats"><div class="stat"><b>${selected.requirements.length}</b><span>requirements</span></div><div class="stat"><b>${selected.artifacts.length}</b><span>artifacts</span></div><div class="stat"><b>${input.execution_mode==='automatic'?'Auto':'Reviewed'}</b><span>workflow</span></div><div class="stat"><b>${metric.open_questions?.length||0}</b><span>open questions</span></div></div></div><div class="card"><div class="card-header"><div><h2>Agent team</h2><div class="muted small">Every stage has an explicit role, responsibility, contract, and approval boundary.</div></div><span class="muted small">${agentCatalog.length} roles</span></div>${agentTeamMarkup()}</div><div class="card half"><div class="card-header"><h2>Generated work</h2><span class="muted small">${selected.artifacts.length} items</span></div><div class="artifact-list">${selected.artifacts.length?selected.artifacts.map(artifactCard).join(''):'<div class="muted small">Artifacts appear after scope confirmation.</div>'}</div></div><div class="card half"><div class="card-header"><h2>Requirement register</h2><span class="muted small">Stable traceable IDs</span></div><div style="display:grid;gap:8px;max-height:280px;overflow:auto">${selected.requirements.map(item=>`<div class="artifact"><strong>${esc(item.id)} · ${esc(item.category)}</strong><small>${esc(item.statement)}</small></div>`).join('')}</div></div><div class="card half"><div class="card-header"><h2>Agent workflow trace</h2><span class="muted small">${selected.trace.length} events</span></div><div class="trace">${selected.trace.slice().reverse().map(row=>`<div class="trace-row"><time>${new Date(row.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</time><div><strong>${esc(row.agent.replaceAll('_',' '))}</strong><span>${esc(row.message)}</span></div></div>`).join('')}</div></div><div class="card half"><div class="card-header"><h2>Open decisions</h2><span class="muted small">Keep uncertainty explicit</span></div>${(selected.decisions.length?selected.decisions: (metric.open_questions?.length?metric.open_questions.map(q=>({decision:'To clarify',feedback:q})):[{decision:'No open decisions',feedback:'Your submitted requirements are included in the delivery pack.'}])).map(d=>`<div class="question"><strong>${esc(d.decision)}</strong><br><span class="muted">${esc(d.feedback||'No additional notes')}</span></div>`).join('')}</div></div>`; const gateForm=document.querySelector('#gate-form'); if(gateForm) gateForm.onsubmit=respondGate; }
+    function gateCard(gate) { if(!gate) return ''; const isUat=gate.stage==='uat'; return `<div class="card gate"><div class="card-header"><div><p class="eyebrow">Review needed</p><h2>${esc(gate.title)}</h2></div></div><p class="muted">${esc(gate.description)}</p>${gate.questions.map(q=>`<div class="question">${esc(q)}</div>`).join('')}<form id="gate-form"><label>Notes (optional)<textarea name="feedback" placeholder="Add a decision or requested change…"></textarea></label><div class="actions"><button class="button" name="decision" value="${isUat?'pass':'approve'}">${isUat?'Pass UAT & hand over':'Approve & continue'}</button>${isUat?'<button class="button secondary" name="decision" value="fail">Fail UAT</button>':''}<button class="button secondary" name="decision" value="request_changes">Request changes</button><button class="button danger" name="decision" value="reject">Reject / stop</button></div></form></div>`; }
+    function artifactCard(artifact) { return `<div class="artifact"><strong>${esc(artifact.title)}</strong><button onclick="showArtifact('${artifact.kind}')">View</button> <a class="muted small" href="/api/projects/${selected.id}/artifacts/${artifact.kind}/download">Download .docx</a></div>`; }
+    function renderDetail() {
+      if(!selected) return showCreate();
+      const input=selected.input, gate=selected.gates.find(g=>g.id===selected.active_gate_id), metric=selected.metrics||{};
+      const decisions=selected.decisions.length?selected.decisions:(metric.open_questions||[]).map(q=>({decision:'To clarify',feedback:q}));
+      document.querySelector('#main').innerHTML=`
+        <div class="topline"><div><h1>${esc(input.project_name)}</h1><p class="subtitle">${esc(input.brief.length>300?input.brief.slice(0,300)+'…':input.brief)}</p></div><span class="badge">${esc(selected.status.replaceAll('_',' '))}</span></div>
+        <div class="grid"><div class="card">${renderSteps()}</div>${gate?gateCard(gate):''}
+        ${selected.status==='pack_ready'?'<div class="card"><h2>Project pack ready</h2></div>':''}
+        ${selected.error?`<div class="card" role="alert"><h2>Needs attention</h2><p>${esc(selected.error)}</p></div>`:''}
+        <div class="card"><div class="card-header"><h2>Project files</h2><span class="muted small">${selected.artifacts.length}</span></div><div class="artifact-list">${selected.artifacts.length?selected.artifacts.map(artifactCard).join(''):'<div class="muted small">Files will appear here as work progresses.</div>'}</div></div>
+        <details class="card project-extra"><summary>Project details</summary><div class="project-extra-content">
+        <section><h3>Requirements</h3><div class="extra-list">${selected.requirements.length?selected.requirements.map(item=>`<div class="artifact"><strong>${esc(item.category)}</strong><small>${esc(item.statement)}</small></div>`).join(''):'<p class="muted small">No requirements extracted yet.</p>'}</div></section>
+        ${decisions.length?`<section><h3>Questions to resolve</h3>${decisions.map(d=>`<div class="question"><strong>${esc(d.decision)}</strong><br><span class="muted">${esc(d.feedback||'')}</span></div>`).join('')}</section>`:''}
+        <section><h3>Activity</h3><div class="trace">${selected.trace.slice().reverse().map(row=>`<div class="trace-row"><time>${new Date(row.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</time><div><strong>${esc(row.agent.replaceAll('_',' '))}</strong><span>${esc(row.message)}</span></div></div>`).join('')}</div></section>
+        <section><h3>AI team</h3>${agentTeamMarkup()}</section></div></details></div>`;
+      const gateForm=document.querySelector('#gate-form'); if(gateForm) gateForm.onsubmit=respondGate;
+    }
     async function respondGate(event) {
       event.preventDefault();
       const decision=event.submitter?.value || (selected.current_stage==='uat'?'pass':'approve');

@@ -61,7 +61,7 @@ class APITests(unittest.TestCase):
     def test_dashboard_health_and_metadata(self):
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
-        self.assertIn('Tell us what you want to build', response.text)
+        self.assertIn('What do you need built?', response.text)
         health = self.client.get('/api/health')
         self.assertEqual(health.status_code, 200)
         self.assertFalse(health.json()['durable_storage'])

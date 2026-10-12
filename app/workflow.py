@@ -72,6 +72,9 @@ class WorkflowEngine:
         project.current_stage = "client_requirements"
         project.metrics["requirement_count"] = len(project.requirements)
         project.metrics["open_questions"] = result["questions"]
+        if result.get("proposal_context"):
+            project.metrics["proposal_context"] = result["proposal_context"]
+            project.metrics["analysis_trace"] = result.get("analysis_trace", [])
         self._trace(
             project,
             "client_requirements",

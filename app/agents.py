@@ -4,6 +4,9 @@ import hashlib
 import json
 import os
 import re
+import ssl
+import certifi
+from groq import Groq, GroqError
 from typing import Any
 from urllib.request import Request, urlopen
 
@@ -23,12 +26,13 @@ class AIClient:
         groq_key = os.getenv("GROQ_API_KEY", "").strip()
         openai_key = os.getenv("OPENAI_API_KEY", "").strip()
         self.api_key = groq_key or openai_key
+        self.provider = "groq" if groq_key else "openai"
         self.base_url = (
             os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
             if groq_key
             else os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
         ).rstrip("/")
-        self.model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile") if groq_key else os.getenv(
+        self.model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b") if groq_key else os.getenv(
             "AI_MODEL", "gpt-4o-mini"
         )
 
@@ -39,8 +43,7 @@ class AIClient:
     def json(self, system: str, prompt: str, fallback: dict[str, Any]) -> dict[str, Any]:
         if not self.enabled:
             return fallback
-        body = json.dumps(
-            {
+        payload = {
                 "model": self.model,
                 "temperature": 0.2,
                 "response_format": {"type": "json_object"},
@@ -49,7 +52,11 @@ class AIClient:
                     {"role": "user", "content": prompt},
                 ],
             }
-        ).encode("utf-8")
+        if self.provider == "groq":
+            payload["max_completion_tokens"] = 4096
+            if self.model.startswith("openai/gpt-oss"):
+                payload["reasoning_effort"] = "low"
+        body = json.dumps(payload).encode("utf-8")
         request = Request(
             f"{self.base_url}/chat/completions",
             data=body,
@@ -57,12 +64,21 @@ class AIClient:
             method="POST",
         )
         try:
-            with urlopen(request, timeout=45) as response:  # noqa: S310 - configured endpoint
-                raw = json.loads(response.read().decode("utf-8"))
-            content = raw["choices"][0]["message"]["content"]
+            if self.provider == "groq":
+                # Groq's SDK appends /openai/v1 itself; the saved setting is
+                # an OpenAI-compatible base URL used by the former adapter.
+                sdk_base_url = self.base_url.removesuffix("/openai/v1")
+                with Groq(api_key=self.api_key, base_url=sdk_base_url, timeout=45, max_retries=0) as client:
+                    response = client.chat.completions.create(**payload)
+                content = response.choices[0].message.content
+            else:
+                context = ssl.create_default_context(cafile=certifi.where())
+                with urlopen(request, timeout=45, context=context) as response:  # noqa: S310 - configured endpoint
+                    raw = json.loads(response.read().decode("utf-8"))
+                content = raw["choices"][0]["message"]["content"]
             parsed = json.loads(content)
             return parsed if isinstance(parsed, dict) else fallback
-        except (OSError, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+        except (GroqError, OSError, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
             return fallback
 
 
@@ -85,8 +101,9 @@ def _sentences(text: str) -> list[str]:
 
 
 def _requirement_id(statement: str, index: int) -> str:
-    digest = hashlib.sha1(statement.encode("utf-8")).hexdigest()[:6]
-    return f"REQ-{index:02d}-{digest}"
+    normalized = " ".join(statement.casefold().split())
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:10].upper()
+    return f"REQ-{digest}"
 
 
 class RequirementsAgent:
@@ -96,6 +113,9 @@ class RequirementsAgent:
         self.client = client
 
     def run(self, project_input: Any) -> dict[str, Any]:
+        from .proposal_integration import analyze_requirements, proposal_engine
+        if proposal_engine() == "langgraph":
+            return analyze_requirements(project_input)
         source_lines = _sentences(project_input.brief)
         source_lines = [line for line in source_lines if not re.match(r"^(?:project(?: name)?|title)\s*:|^Additional information from the client:\s*$", line, re.I)]
         supplied = [
@@ -174,7 +194,8 @@ class BaseAgent:
             "You are one bounded specialist in a software delivery workflow. "
             "Return a small JSON object only. Do not invent client commitments, prices, dates, or scope. "
             "Do not add work-hour targets or comparisons.",
-            json.dumps({"instruction": instruction, "brief": project.input.brief, "requirements": [item.statement for item in project.requirements], "revision_feedback": project.revision_feedback}),
+            json.dumps({"instruction": instruction, "brief": project.input.brief, "requirements": [item.statement for item in project.requirements], "revision_feedback": project.revision_feedback,
+                        "upstream_artifacts": {a.kind: json.dumps(a.content, ensure_ascii=False)[:6000] for a in project.artifacts if a.kind in {"proposal", "brd", "ui_ux", "implementation", "qa_uat"}}}),
             {},
         )
 
@@ -456,10 +477,12 @@ class HandoverAgent(BaseAgent):
 
 def build_agents(client: AIClient | None = None) -> dict[str, Any]:
     client = client or AIClient()
+    from .proposal_integration import IntegratedDocumentAgent, proposal_engine
+    integrated = proposal_engine() == "langgraph"
     return {
         "requirements": RequirementsAgent(client),
-        "proposal": ProposalAgent(client),
-        "brd": BRDAgent(client),
+        "proposal": IntegratedDocumentAgent("proposal") if integrated else ProposalAgent(client),
+        "brd": IntegratedDocumentAgent("brd") if integrated else BRDAgent(client),
         "ui_ux": UXDesignAgent(client),
         "implementation": DevelopmentAgent(client),
         "qa_uat": QAAgent(client),

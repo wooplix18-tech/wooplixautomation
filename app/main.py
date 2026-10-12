@@ -6,13 +6,15 @@ from pathlib import Path
 import psycopg
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from .agents import AIClient
 from .config import load_environment
 from .models import CreateProjectRequest, GateResponse, Project, summarize
 from .intake import DocumentError, IntakeReply, IntakeRequest, MAX_UPLOAD_BYTES, extract_document, respond_to_intake
 from .registry import AGENT_CATALOG, agent_catalog
+from .proposal_integration import proposal_engine
+from .exports import artifact_docx
 from .storage import StorageConflict, build_store
 from .workflow import ProjectNotFound, WorkflowEngine, WorkflowError, workflow_topology
 
@@ -62,9 +64,11 @@ def health() -> dict[str, object]:
         "service": "wooplix-ai-sdlc",
         "version": app.version,
         "ai_provider_configured": AIClient().enabled,
+        "ai_model": AIClient().model,
         "storage_backend": store.backend,
         "durable_storage": store.backend == "neon_postgres" or os.getenv("VERCEL") != "1",
         "agent_count": len(AGENT_CATALOG),
+        "proposal_engine": proposal_engine(),
         "workflow": "requirements → proposal + BRD → UI/UX + development → QA/UAT → documentation → human handover",
     }
 
@@ -76,7 +80,16 @@ def workflow() -> dict[str, object]:
 
 @app.get("/api/agents")
 def agents() -> dict[str, object]:
-    return {"agents": agent_catalog()}
+    client = AIClient()
+    return {"agents": agent_catalog(), "ai_provider_configured": client.enabled, "ai_model": client.model}
+
+
+@app.get("/api/proposal-agent/workflow")
+def proposal_agent_workflow() -> dict[str, object]:
+    from .proposal_agent.multi_agent_graph import build_graph
+    return {"engine": "proposalagent-langgraph", "configured": proposal_engine() == "langgraph",
+            "source_commit": "0ab21f9c70ced79c93bed2b18f1f71d6831c259a",
+            "graph": build_graph().get_graph().to_json()}
 
 
 @app.post("/api/intake/chat", response_model=IntakeReply)
@@ -147,6 +160,16 @@ def get_artifact(project_id: str, kind: str) -> dict[str, object]:
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
     return FileResponse(Path(__file__).parent / "static" / "index.html")
+
+
+@app.get("/api/projects/{project_id}/artifacts/{kind}/download")
+def download_artifact(project_id: str, kind: str) -> Response:
+    project = _project_or_404(project_id)
+    artifact = next((row for row in project.artifacts if row.kind == kind), None)
+    if artifact is None:
+        raise HTTPException(404, "Artifact is not available yet.")
+    return Response(artifact_docx(artifact), media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": f'attachment; filename="wooplix-{artifact.kind}-v{artifact.version}.docx"'})
 
 
 def run() -> None:
