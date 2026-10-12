@@ -1,14 +1,18 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app.models import GateResponse, ProjectInput
-from app.storage import ProjectStore
-from app.workflow import WorkflowEngine, workflow_topology
+from app.storage import ProjectStore, StorageConflict
+from app.workflow import WorkflowEngine, WorkflowError, workflow_topology
 
 
 class WorkflowTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.environment = patch.dict("os.environ", {"OPENAI_API_KEY": "", "GROQ_API_KEY": ""})
+        self.environment.start()
+        self.addCleanup(self.environment.stop)
         self.temp_dir = tempfile.TemporaryDirectory()
         self.engine = WorkflowEngine(ProjectStore(Path(self.temp_dir.name) / "test.db"))
         self.input = ProjectInput(
@@ -47,8 +51,6 @@ class WorkflowTests(unittest.TestCase):
             {artifact.kind for artifact in project.artifacts},
             {"proposal", "brd", "ui_ux", "implementation", "qa_uat", "documentation"},
         )
-        self.assertEqual(project.metrics["traditional_work_hours_target"], 500)
-        self.assertEqual(project.metrics["ai_assisted_work_hours_target"], 40)
         self.assertTrue(any(event.agent == "proposal_generation_agent" for event in project.trace))
 
         project = self.engine.respond(
@@ -65,6 +67,60 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(project.status, "completed")
         self.assertIsNone(project.active_gate_id)
         self.assertEqual({artifact.kind for artifact in project.artifacts}, {"proposal", "brd", "ui_ux", "implementation", "qa_uat", "documentation", "handover"})
+
+
+    def test_invalid_gate_decision_does_not_approve_scope(self) -> None:
+        project = self.engine.create(self.input)
+        for decision in ("fail", "pass"):
+            with self.assertRaises(WorkflowError):
+                self.engine.respond(project.id, project.active_gate_id, GateResponse(decision=decision))
+        persisted = self.engine.get(project.id)
+        self.assertEqual(persisted.active_gate.status, "pending")
+        self.assertEqual(persisted.artifacts, [])
+        self.assertEqual(persisted.decisions, [])
+
+    def test_failed_uat_never_creates_handover(self) -> None:
+        project = self.engine.create(self.input)
+        for _ in range(2):
+            project = self.engine.respond(project.id, project.active_gate_id, GateResponse(decision="approve"))
+        previous_gate = project.active_gate_id
+        project = self.engine.respond(project.id, previous_gate, GateResponse(decision="fail", feedback="Critical defect."))
+        self.assertEqual(project.status, "uat_failed")
+        self.assertNotEqual(project.active_gate_id, previous_gate)
+        self.assertNotIn("handover", {a.kind for a in project.artifacts})
+
+    def test_stale_snapshot_cannot_overwrite_a_decision(self) -> None:
+        project = self.engine.create(self.input)
+        other_store = ProjectStore(self.engine.store.path)
+        stale = other_store.get(project.id)
+        project = self.engine.respond(project.id, project.active_gate_id, GateResponse(decision="reject"))
+        with self.assertRaises(StorageConflict):
+            other_store.save(stale)
+        self.assertEqual(other_store.get(project.id).status, "cancelled")
+
+    def test_duplicate_decision_is_rejected(self) -> None:
+        project = self.engine.create(self.input)
+        gate_id = project.active_gate_id
+        self.engine.respond(project.id, gate_id, GateResponse(decision="approve"))
+        with self.assertRaises(WorkflowError):
+            self.engine.respond(project.id, gate_id, GateResponse(decision="approve"))
+
+    def test_revision_feedback_reaches_provider_and_artifacts(self) -> None:
+        project = self.engine.create(self.input)
+        project = self.engine.respond(project.id, project.active_gate_id, GateResponse(decision="approve"))
+        client = self.engine.agents["proposal"].client
+        with patch.object(client, "json", return_value={}) as provider:
+            project = self.engine.respond(project.id, project.active_gate_id, GateResponse(decision="request_changes", feedback="Add notification evidence."))
+        self.assertTrue(any('Add notification evidence.' in call.args[1] for call in provider.call_args_list))
+        self.assertTrue(all(a.content["revision_feedback"] == "Add notification evidence." for a in project.artifacts))
+
+    def test_malformed_optional_ai_fields_do_not_fail_pipeline(self) -> None:
+        client = self.engine.agents["proposal"].client
+        malformed = {key: None for key in ["additional_questions", "non_functional_requirements", "design_checks", "technical_decisions", "uat_scenarios", "training_tips"]}
+        with patch.object(client, "json", return_value=malformed):
+            project = self.engine.create(self.input)
+            project = self.engine.respond(project.id, project.active_gate_id, GateResponse(decision="approve"))
+        self.assertEqual(project.status, "delivery_review")
 
     def test_revision_replaces_artifacts_and_increments_version(self) -> None:
         project = self.engine.create(self.input)

@@ -29,7 +29,7 @@ human checkpoints, durable state, and an auditable workflow trace.
 - **Client requirements collection** — accepts a structured intake and a free
   text brief, then creates stable `REQ-*` IDs and acceptance criteria.
 - **Proposal generation** — creates scope, deliverables, assumptions, open
-  decisions, and a clearly labelled 500 → 40 + 18 hour planning target.
+  decisions grounded in the supplied requirements.
 - **BRD generation** — maps every requirement to priority, acceptance criteria,
   non-functional requirements, and delivery stages.
 - **UI/UX design** — generates personas, journeys, screens, states,
@@ -40,9 +40,12 @@ human checkpoints, durable state, and an auditable workflow trace.
   script that a client can execute.
 - **Documentation and training** — creates stakeholder, user, technical, and
   support documentation plans plus a knowledge-transfer checklist.
-- **Human review gates** — scope confirmation, delivery pack review, and UAT
-  signoff. Changes trigger a bounded revision cycle.
-- **Durable persistence** — SQLite stores projects, artifacts, gates,
+- **Conversational intake** — paste one brief, discuss requirements with the
+  project assistant, or upload a TXT, Markdown, text-enabled PDF, or DOCX file.
+- **Automatic delivery pack** — generate all seven planning deliverables
+  without intermediate approval stops. Optional reviewed mode keeps scope,
+  delivery review, and UAT checkpoints.
+- **Durable persistence** — Neon PostgreSQL or local SQLite stores projects, artifacts, gates,
   decisions, revisions, and trace events.
 - **Optional model provider** — set an OpenAI-compatible or Groq API key to
   enable model calls. Without credentials, deterministic demo mode runs
@@ -52,68 +55,100 @@ human checkpoints, durable state, and an auditable workflow trace.
 
 ## Quick start
 
+Use Python 3.12 or newer (the tested local/Vercel version is pinned to 3.14 in
+`.python-version`). From the repository root:
+
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m uvicorn app.main:app --reload
+cp .env.example .env.local  # only if .env.local does not already exist
+./scripts/start.sh
 ```
 
-Open <http://127.0.0.1:8000/> and create a workspace. The app intentionally
-pauses at the scope confirmation gate. Approve it to run the specialist
-pipeline, then approve the delivery review and pass UAT to create the final
-handover record.
+Open <http://127.0.0.1:8000/>. This checkout already has a configured
+`.env.local`; preserve its existing credentials. The application automatically
+loads `.env.local`, then `.env`, without overriding variables supplied by the
+shell. Vercel uses hosting environment variables and never loads local files.
 
-The database is created at `data/automation.db`. Set `AUTOMATION_DB_PATH` to a
-different location for a separate workspace or test run.
+With `DATABASE_URL` set, projects are persisted in Neon PostgreSQL. Without
+it, local development uses `data/automation.db`. To explicitly run an offline
+SQLite demo even when `.env.local` contains Neon settings:
+
+```bash
+DATABASE_URL='' GROQ_API_KEY='' OPENAI_API_KEY='' ./scripts/start.sh
+```
+
+The home screen starts with the project assistant. Paste requirements or
+attach one document (up to 2 MB and 30,000 extracted characters). Follow-up
+questions are optional: click Generate delivery pack whenever the brief is
+complete. Automatic mode generates the seven deliverables and saves the project
+as `pack_ready`. Conversation drafts stay in the browser tab until generation.
+
+If you select reviewed mode, the workflow pauses for scope confirmation,
+delivery review, and UAT. Failed UAT keeps handover blocked; duplicate and stale
+decisions return a conflict. Existing reviewed projects retain their behavior.
+
+Without an AI-provider key, guided intake and deterministic artifact generation
+remain available. A configured Groq/OpenAI-compatible provider enables dynamic
+chat questions and metadata extraction. Original user requirements are always
+preserved even if the model omits them in its summary.
+
+Uploads are processed as text; the original files are not stored. PDF scans
+without a text layer need OCR before upload. Word tables and paragraphs are
+included in the extracted requirements.
 
 ## Deploy on Vercel
 
-The repository includes `api/index.py` and `vercel.json` so Vercel can detect
-the FastAPI serverless function. Import
-`wooplix18-tech/wooplixautomation` into Vercel with the repository root as the
-project root, then deploy. The Python function serves both the API and the
-browser cockpit.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the exact account, root directory,
+environment import, and verification steps.
 
-For a first deployment, Vercel uses `/tmp/automation.db` when `VERCEL=1` so
-the function can start on its writable filesystem. Vercel `/tmp` storage is
-ephemeral and is not a production database. Configure a hosted PostgreSQL or
-other durable store before relying on project persistence across serverless
-instances; the local SQLite store remains the development implementation.
+Import `wooplix18-tech/wooplixautomation` into the intended Vercel account.
+**Use the repository root (`.`), not `app/`, as Root Directory.** Select the
+FastAPI preset. The modern Python entrypoint is `app.main:app`, defined in
+`pyproject.toml`; `vercel.json` sets a 300-second function limit. Leave Build,
+Install, and Output settings at the FastAPI defaults. The cockpit HTML is
+served by the Python application and requires no frontend build.
 
-Recommended environment variables in Vercel:
+Import the private `.env.vercel` file in Vercel's Environment Variables screen
+before deployment. `DATABASE_URL` is required for durable hosted storage;
+use this project's pooled Neon connection. AI keys are optional. Vercel sets
+`VERCEL=1` automatically. The existing `api/index.py` remains a compatibility
+wrapper; the native FastAPI deployment uses `app/main.py`.
 
-```text
-VERCEL=1
-GROQ_API_KEY=<optional>
-GROQ_MODEL=llama-3.3-70b-versatile
-```
+If `DATABASE_URL` is absent, the hosted app falls back to `/tmp/automation.db`
+and the health response reports `durable_storage: false`. This is only suitable
+for disposable demos: projects can disappear across invocations. Do not set
+`AUTOMATION_DB_PATH=data/automation.db` on Vercel, whose deployment filesystem
+is read-only.
 
-After deployment, verify:
-
-```text
-https://YOUR-VERCEL-DOMAIN/api/health
-https://YOUR-VERCEL-DOMAIN/
-```
+The existing `neon.ts` and `hello.ts` are optional Neon infrastructure examples.
+They do not provide authentication for this FastAPI app and are not required
+for its Vercel deployment. All API callers currently share one workspace;
+use Vercel deployment protection for a private workspace until application
+login and authorization are implemented.
 
 ## Optional AI provider
 
-Copy `.env.example` to `.env` or export variables in the shell. Either an
-OpenAI-compatible provider or Groq can be used:
+Set either `GROQ_API_KEY` with `GROQ_MODEL`, or `OPENAI_API_KEY` with `AI_MODEL`,
+in `.env.local` and Vercel settings. Groq takes precedence if both keys exist.
+Without a key, the deterministic planning workflow works offline.
 
-```bash
-export GROQ_API_KEY="..."
-export GROQ_MODEL="llama-3.3-70b-versatile"
-```
+Provider responses are optional enhancements. Unavailable providers or malformed
+optional JSON fields fall back to deterministic artifacts. Revision requests
+are included in provider prompts and recorded in revised artifacts; they do
+not execute application code or guarantee that the requested feature has been
+implemented.
 
-The provider adapter is deliberately conservative: typed deterministic
-fallbacks ensure the workflow remains usable when the provider is unavailable,
-rate-limited, or returns malformed JSON. Credentials are never persisted in a
-project state or returned by the health endpoint.
+Each provider call can wait up to 45 seconds. Specialist generation runs
+synchronously within the review request. If a request times out, reload the
+project to inspect its saved state before resubmitting a decision. Long-running
+workflows still need a durable job runner and retry/recovery design.
 
-When `DATABASE_URL` is present, the API uses Neon PostgreSQL. Without it, local
-development uses SQLite so the workflow remains runnable without cloud setup.
-The Neon store keeps the complete validated project snapshot in JSONB and
-creates the `automation_projects` table automatically on startup.
+The store creates `automation_projects` and its timestamp index on first use,
+not during entrypoint import/build. Snapshot saves use an optimistic timestamp
+check to prevent one instance from overwriting another's review decision.
+`GET /api/health` checks connectivity and reports the backend without exposing
+credentials. It does not verify an external model call.
 
 ## API
 
@@ -122,6 +157,8 @@ creates the `automation_projects` table automatically on startup.
 | `GET /api/health` | Service and provider status |
 | `GET /api/workflow` | Workflow node and edge metadata |
 | `GET /api/agents` | Agent roles, responsibilities, contracts, and execution status |
+| `POST /api/intake/chat` | Ask an inquiry question and organize the conversation into a project draft |
+| `POST /api/intake/document` | Extract requirements from one uploaded document |
 | `POST /api/projects` | Create a project and extract requirements |
 | `GET /api/projects` | List project summaries |
 | `GET /api/projects/{id}` | Restore complete durable project state |
@@ -155,8 +192,9 @@ Example gate response:
 ## Run the demo and tests
 
 ```bash
-PYTHONPATH=. .venv/bin/python scripts/demo.py
-PYTHONPATH=. .venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m pip install -r requirements-dev.txt
+GROQ_API_KEY='' OPENAI_API_KEY='' .venv/bin/python -m scripts.demo
+.venv/bin/python -m unittest discover -s tests -v
 ```
 
 The system does not execute generated application code. The development agent
@@ -175,6 +213,8 @@ highest-volume planning and documentation work.
 - `app/storage.py` — Neon PostgreSQL store with SQLite local fallback.
 - `app/registry.py` — explicit agent role contracts and dependency-aware task graph.
 - `app/main.py` — FastAPI API and static cockpit entrypoint.
+- `app/intake.py` — conversational intake, bounded PDF/Word/text extraction,
+  and project metadata collection.
 - `app/static/index.html` — zero-build responsive project dashboard.
 - `tests/test_workflow.py` — offline lifecycle, revision, persistence, and
   topology checks.
@@ -184,11 +224,3 @@ checkpointer migration. The `langgraph` integration is an optional dependency
 in `pyproject.toml`; the current core uses an explicit dependency-aware state
 machine while the agent registry establishes the role, responsibility, input,
 output, tool, and approval contracts that LangGraph nodes will use.
-
-## Delivery target
-
-The proposal artifact exposes the requested **approximately 500 hours of
-traditional work versus 40 hours of AI-assisted work and 15–20 hours of human
-involvement** as a planning target, not a universal promise. Each real project
-should replace the target with evidence-based scope, integration, and UAT
-estimates after the requirements gate.

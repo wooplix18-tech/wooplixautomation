@@ -4,10 +4,10 @@ import hashlib
 import json
 import os
 import re
-from typing import Any, Callable
+from typing import Any
 from urllib.request import Request, urlopen
 
-from .models import Artifact, Project, RequirementItem, new_id
+from .models import Artifact, Project, RequirementItem
 
 
 class AIClient:
@@ -66,6 +66,13 @@ class AIClient:
             return fallback
 
 
+def _strings(value: Any) -> list[str]:
+    """Ignore malformed optional provider fields instead of failing a workflow."""
+    if not isinstance(value, list):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
 def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")[:42] or "requirement"
 
@@ -90,6 +97,7 @@ class RequirementsAgent:
 
     def run(self, project_input: Any) -> dict[str, Any]:
         source_lines = _sentences(project_input.brief)
+        source_lines = [line for line in source_lines if not re.match(r"^(?:project(?: name)?|title)\s*:|^Additional information from the client:\s*$", line, re.I)]
         supplied = [
             ("goal", goal) for goal in project_input.goals
         ] + [("integration", integration) for integration in project_input.integrations]
@@ -146,7 +154,7 @@ class RequirementsAgent:
             json.dumps({"brief": project_input.brief, "known_questions": questions}),
             {},
         )
-        for question in model_hint.get("additional_questions", []) if isinstance(model_hint, dict) else []:
+        for question in _strings(model_hint.get("additional_questions")):
             if isinstance(question, str) and question.strip() and question not in questions:
                 questions.append(question.strip())
         return {"requirements": requirements, "questions": questions}
@@ -164,8 +172,9 @@ class BaseAgent:
     def model_hint(self, instruction: str, project: Project) -> dict[str, Any]:
         return self.client.json(
             "You are one bounded specialist in a software delivery workflow. "
-            "Return a small JSON object only. Do not invent client commitments, prices, dates, or scope.",
-            json.dumps({"instruction": instruction, "brief": project.input.brief, "requirements": [item.statement for item in project.requirements]}),
+            "Return a small JSON object only. Do not invent client commitments, prices, dates, or scope. "
+            "Do not add work-hour targets or comparisons.",
+            json.dumps({"instruction": instruction, "brief": project.input.brief, "requirements": [item.statement for item in project.requirements], "revision_feedback": project.revision_feedback}),
             {},
         )
 
@@ -194,12 +203,6 @@ class ProposalAgent(BaseAgent):
                 "Automated test strategy, UAT pack, and handover documentation",
             ],
             "delivery_model": "AI agents work in bounded stages; human reviewers approve scope, design, release quality, and handover.",
-            "planning_target": {
-                "traditional_hours": 500,
-                "ai_assisted_hours": 40,
-                "human_involvement_hours": 18,
-                "note": "Planning target for a representative project; the confirmed estimate depends on scope and integrations.",
-            },
             "assumptions": [
                 "Client feedback is consolidated at each human review gate.",
                 "Credentials, source data, brand assets, and integration documentation are supplied when requested.",
@@ -261,7 +264,7 @@ class BRDAgent(BaseAgent):
             ],
         }
         model_hint = self.model_hint("Suggest non-functional requirements that are directly relevant to this brief.", project)
-        extra_nfr = [value.strip() for value in model_hint.get("non_functional_requirements", []) if isinstance(value, str) and value.strip()]
+        extra_nfr = _strings(model_hint.get("non_functional_requirements"))
         if extra_nfr:
             content["non_functional_requirements"].extend(extra_nfr[:3])
         return self.artifact("brd", f"Business Requirements Document — {inp.project_name}", content, [self.name])
@@ -296,7 +299,7 @@ class UXDesignAgent(BaseAgent):
             "requirement_links": [item.id for item in project.requirements],
         }
         model_hint = self.model_hint("Suggest up to three accessibility or edge-state design checks for this brief.", project)
-        extra_checks = [value.strip() for value in model_hint.get("design_checks", []) if isinstance(value, str) and value.strip()]
+        extra_checks = _strings(model_hint.get("design_checks"))
         if extra_checks:
             content["design_principles"].extend(extra_checks[:3])
         return self.artifact("ui_ux", f"UI/UX Design Specification — {inp.project_name}", content, [self.name])
@@ -339,7 +342,7 @@ class DevelopmentAgent(BaseAgent):
             ],
         }
         model_hint = self.model_hint("Suggest up to three technical decisions that must be confirmed before implementation.", project)
-        extra_decisions = [value.strip() for value in model_hint.get("technical_decisions", []) if isinstance(value, str) and value.strip()]
+        extra_decisions = _strings(model_hint.get("technical_decisions"))
         if extra_decisions:
             content["open_technical_decisions"].extend(extra_decisions[:3])
         return self.artifact("implementation", f"Software Implementation Blueprint — {inp.project_name}", content, [self.name])
@@ -378,7 +381,7 @@ class QAAgent(BaseAgent):
             "defect_policy": "Blocking defects pause handover; non-blocking observations become a prioritized backlog with an owner confirmed by the human reviewer.",
         }
         model_hint = self.model_hint("Suggest up to three extra UAT scenarios, each as a string, based on the brief.", project)
-        for index, scenario in enumerate(model_hint.get("uat_scenarios", []) if isinstance(model_hint, dict) else [], len(cases) + 1):
+        for index, scenario in enumerate(_strings(model_hint.get("uat_scenarios")), len(cases) + 1):
             if isinstance(scenario, str) and scenario.strip():
                 content["uat_script"].append(f"Execute additional scenario {index}: {scenario.strip()}")
         return self.artifact("qa_uat", f"Test Strategy & UAT Pack — {project.input.project_name}", content, [self.name])
@@ -409,7 +412,7 @@ class DocumentationAgent(BaseAgent):
             "source_links": [artifact.kind for artifact in project.artifacts],
         }
         model_hint = self.model_hint("Suggest up to two role-specific training tips for this brief.", project)
-        tips = [value.strip() for value in model_hint.get("training_tips", []) if isinstance(value, str) and value.strip()]
+        tips = _strings(model_hint.get("training_tips"))
         if tips:
             content["training_plan"].extend(tips[:2])
         return self.artifact("documentation", f"Documentation & Training Plan — {project.input.project_name}", content, [self.name])
@@ -419,6 +422,19 @@ class HandoverAgent(BaseAgent):
     name = "human_handover_agent"
 
     def run(self, project: Project) -> Artifact:
+        if project.input.execution_mode == "automatic":
+            return self.artifact(
+                "handover", f"Delivery Pack — {project.input.project_name}",
+                {
+                    "release_status": "Delivery planning pack generated",
+                    "delivered_artifacts": [artifact.kind for artifact in project.artifacts],
+                    "requirements": [item.id for item in project.requirements],
+                    "open_questions": project.metrics.get("open_questions", []),
+                    "next_steps": ["Implement the generated blueprint", "Execute the test and UAT plan against the implementation", "Confirm release and operational ownership"],
+                    "implementation_status": "Blueprint generated; application code has not been built or deployed",
+                    "uat_status": "Test plan generated; acceptance tests have not been executed",
+                }, [self.name],
+            )
         return self.artifact(
             "handover",
             f"Client Handover Record — {project.input.project_name}",

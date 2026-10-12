@@ -3,12 +3,16 @@ name = "wooplix-automation-langgraph"
 version = "0.1.0"
 description = "AI-assisted software delivery orchestration for websites, mobile apps, and software products"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.115,<1",
-    "pydantic>=2.7,<3",
-    "uvicorn[standard]>=0.30,<1",
-    "psycopg[binary]>=3.2,<4",
+    "fastapi==0.143.0",
+    "pydantic==2.14.1",
+    "uvicorn[standard]==0.54.0",
+    "psycopg[binary]==3.3.6",
+    "python-dotenv==1.2.4",
+    "python-multipart==0.0.32",
+    "pypdf==6.20.0",
+    "python-docx==1.2.0",
 ]
 
 [project.optional-dependencies]
@@ -17,6 +21,9 @@ dev = ["httpx>=0.27,<1"]
 
 [project.scripts]
 automation-server = "app.main:run"
+
+[tool.vercel]
+entrypoint = "app.main:app"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

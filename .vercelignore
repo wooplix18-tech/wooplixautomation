@@ -1,0 +1,22 @@
+.git
+.agents
+.venv
+.neon
+.env*
+!.env.example
+node_modules
+data
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.DS_Store
+tests
+scripts
+# Optional Neon provisioning files are independent of the FastAPI deployment.
+hello.ts
+neon.ts
+package.json
+package-lock.json
+skills-lock.json
+dist

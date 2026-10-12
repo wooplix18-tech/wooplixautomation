@@ -3,20 +3,24 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+import psycopg
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from .agents import AIClient
+from .config import load_environment
 from .models import CreateProjectRequest, GateResponse, Project, summarize
+from .intake import DocumentError, IntakeReply, IntakeRequest, MAX_UPLOAD_BYTES, extract_document, respond_to_intake
 from .registry import AGENT_CATALOG, agent_catalog
-from .storage import build_store
-from .workflow import WorkflowEngine, WorkflowError, workflow_topology
+from .storage import StorageConflict, build_store
+from .workflow import ProjectNotFound, WorkflowEngine, WorkflowError, workflow_topology
 
 
 # Vercel functions have a read-only deployment bundle. /tmp is writable, but
 # ephemeral; configure a hosted database before using multiple production
 # instances. Local development keeps the durable SQLite default.
+load_environment()
 DB_PATH = os.getenv("AUTOMATION_DB_PATH") or (
     "/tmp/automation.db" if os.getenv("VERCEL") == "1" else "data/automation.db"
 )
@@ -25,11 +29,22 @@ engine = WorkflowEngine(store)
 app = FastAPI(title="Wooplix AI SDLC", version="0.1.0", description="Multi-agent software delivery orchestration")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[value.strip() for value in os.getenv("CORS_ORIGINS", "").split(",") if value.strip()],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(StorageConflict)
+def storage_conflict(_request, _exc) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": "This project changed during your request. Refresh it before responding again."})
+
+
+@app.exception_handler(psycopg.Error)
+def database_error(_request, _exc) -> JSONResponse:
+    # Driver exceptions can contain connection details. Keep them off the API.
+    return JSONResponse(status_code=503, content={"detail": "Database unavailable. Check DATABASE_URL and retry."})
 
 
 def _project_or_404(project_id: str) -> Project:
@@ -41,12 +56,14 @@ def _project_or_404(project_id: str) -> Project:
 
 @app.get("/api/health")
 def health() -> dict[str, object]:
+    store.check_connection()
     return {
         "ok": True,
         "service": "wooplix-ai-sdlc",
         "version": app.version,
         "ai_provider_configured": AIClient().enabled,
         "storage_backend": store.backend,
+        "durable_storage": store.backend == "neon_postgres" or os.getenv("VERCEL") != "1",
         "agent_count": len(AGENT_CATALOG),
         "workflow": "requirements → proposal + BRD → UI/UX + development → QA/UAT → documentation → human handover",
     }
@@ -60,6 +77,26 @@ def workflow() -> dict[str, object]:
 @app.get("/api/agents")
 def agents() -> dict[str, object]:
     return {"agents": agent_catalog()}
+
+
+@app.post("/api/intake/chat", response_model=IntakeReply)
+def intake_chat(request: IntakeRequest) -> IntakeReply:
+    try:
+        return respond_to_intake(request)
+    except DocumentError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@app.post("/api/intake/document")
+def intake_document(file: UploadFile) -> dict[str, object]:
+    try:
+        content = file.file.read(MAX_UPLOAD_BYTES + 1)
+        text = extract_document(file.filename or "document", content)
+        return {"filename": Path(file.filename or "document").name, "text": text, "characters": len(text)}
+    except DocumentError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    finally:
+        file.file.close()
 
 
 @app.post("/api/projects", response_model=Project, status_code=201)
@@ -92,6 +129,8 @@ def run_project(project_id: str) -> Project:
 def respond_to_gate(project_id: str, gate_id: str, response: GateResponse) -> Project:
     try:
         return engine.respond(project_id, gate_id, response)
+    except ProjectNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except WorkflowError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -114,3 +153,7 @@ def run() -> None:
     import uvicorn
 
     uvicorn.run("app.main:app", host="127.0.0.1", port=int(os.getenv("PORT", "8000")), reload=False)
+
+
+if __name__ == "__main__":
+    run()

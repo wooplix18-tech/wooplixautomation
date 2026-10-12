@@ -24,7 +24,6 @@ def main() -> None:
     project = engine.respond(project.id, project.active_gate_id, GateResponse(decision="pass"))
     print(f"{project.input.project_name}: {project.status}")
     print(f"Artifacts: {', '.join(artifact.kind for artifact in project.artifacts)}")
-    print(f"AI target: {project.metrics['ai_assisted_work_hours_target']} hours; human target: {project.metrics['human_review_hours_target']} hours")
 
 
 if __name__ == "__main__":

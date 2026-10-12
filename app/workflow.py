@@ -15,15 +15,19 @@ from .models import (
     now_iso,
 )
 from .registry import WORKFLOW_TASKS
-from .storage import ProjectStore
+from .storage import PostgresProjectStore, ProjectStore
 
 
 class WorkflowError(ValueError):
     pass
 
 
+class ProjectNotFound(WorkflowError):
+    pass
+
+
 class WorkflowEngine:
-    def __init__(self, store: ProjectStore, client: AIClient | None = None) -> None:
+    def __init__(self, store: ProjectStore | PostgresProjectStore, client: AIClient | None = None) -> None:
         self.store = store
         self.agents = build_agents(client)
         self.ai_enabled = bool((client or AIClient()).enabled)
@@ -33,6 +37,8 @@ class WorkflowEngine:
         self.store.save(project)
         try:
             self._requirements(project)
+            if project.input.execution_mode == "automatic":
+                self._pipeline(project)
         except Exception as exc:  # preserve a useful state for the API client
             self._fail(project, exc)
         return self.store.save(project)
@@ -40,7 +46,7 @@ class WorkflowEngine:
     def get(self, project_id: str) -> Project:
         project = self.store.get(project_id)
         if project is None:
-            raise WorkflowError(f"Project {project_id} was not found.")
+            raise ProjectNotFound(f"Project {project_id} was not found.")
         return project
 
     def list(self) -> list[Project]:
@@ -65,6 +71,7 @@ class WorkflowEngine:
         project.requirements = result["requirements"]
         project.current_stage = "client_requirements"
         project.metrics["requirement_count"] = len(project.requirements)
+        project.metrics["open_questions"] = result["questions"]
         self._trace(
             project,
             "client_requirements",
@@ -74,6 +81,9 @@ class WorkflowEngine:
             started,
             {"question_count": len(result["questions"])},
         )
+        if project.input.execution_mode == "automatic":
+            project.status = "running"
+            return
         self._open_gate(
             project,
             "requirements_confirmation",
@@ -111,6 +121,8 @@ class WorkflowEngine:
         started = time.perf_counter()
         self._trace(project, stage, agent_name, "started", f"{agent_name.replace('_', ' ').title()} started.")
         artifact = self.agents[key].run(project)
+        if project.revision_feedback:
+            artifact.content["revision_feedback"] = project.revision_feedback
         self._trace(project, stage, agent_name, "completed", f"{artifact.title} generated.", started)
         return artifact
 
@@ -144,11 +156,16 @@ class WorkflowEngine:
             project.metrics.update(
                 {
                     "automated_agents_completed": 7,
-                    "human_review_hours_target": 18,
-                    "traditional_work_hours_target": 500,
-                    "ai_assisted_work_hours_target": 40,
                 }
             )
+            if project.input.execution_mode == "automatic":
+                project.current_stage = "handover"
+                self._artifact(project, self.agents["handover"].run(project))
+                project.status = "pack_ready"
+                project.active_gate_id = None
+                self._trace(project, "handover", "human_handover_agent", "completed", "The complete delivery pack is ready.")
+                self.store.save(project)
+                return
             project.current_stage = "delivery_review"
             self._open_gate(
                 project,
@@ -176,6 +193,11 @@ class WorkflowEngine:
         gate = next((row for row in project.gates if row.id == gate_id), None)
         if gate is None or gate.status != "pending" or project.active_gate_id != gate_id:
             raise WorkflowError("This human gate is no longer active.")
+        allowed = {"approve", "request_changes", "reject"}
+        if gate.stage == "uat":
+            allowed |= {"pass", "fail"}
+        if response.decision not in allowed:
+            raise WorkflowError(f"Decision {response.decision} is not valid for {gate.stage}.")
         gate.status = "resolved"
         gate.decision = response.decision
         gate.feedback = response.feedback
@@ -185,6 +207,10 @@ class WorkflowEngine:
             {"gate_id": gate.id, "stage": gate.stage, "decision": response.decision, "feedback": response.feedback, "answers": response.answers, "timestamp": now_iso()}
         )
         self._trace(project, gate.stage, "human_reviewer", "completed", f"Human decision recorded: {response.decision}.")
+
+        # Claim the decision before provider calls. Optimistic saves reject a
+        # simultaneous response from another serverless instance.
+        self.store.save(project)
 
         if gate.stage == "requirements_confirmation":
             if response.decision == "reject":
@@ -225,7 +251,6 @@ class WorkflowEngine:
             elif response.decision == "reject":
                 project.status = "cancelled"
             else:
-                project.status = "uat_failed"
                 project.revision_feedback = response.feedback
                 self._open_gate(
                     project,
@@ -235,6 +260,7 @@ class WorkflowEngine:
                     ["Summarize the evidence for each failed scenario and confirm the retest result."],
                     {"feedback": response.feedback},
                 )
+                project.status = "uat_failed"
         self.store.save(project)
         return project
 

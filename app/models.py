@@ -17,6 +17,7 @@ ProjectStatus = Literal[
     "completed",
     "cancelled",
     "failed",
+    "pack_ready",
 ]
 ArtifactKind = Literal[
     "proposal",
@@ -103,6 +104,7 @@ class ProjectInput(BaseModel):
     timeline: str = "To be confirmed"
     budget: str = "To be confirmed"
     brand_preferences: str = ""
+    execution_mode: Literal["automatic", "reviewed"] = "reviewed"
 
     @field_validator("goals", "target_users", "platforms", "integrations", "constraints")
     @classmethod

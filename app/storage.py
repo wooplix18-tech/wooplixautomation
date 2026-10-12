@@ -4,10 +4,15 @@ import json
 import os
 import sqlite3
 import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from .models import Project, now_iso
+
+
+class StorageConflict(ValueError):
+    """A stale project snapshot must not overwrite a newer human decision."""
 
 
 class ProjectStore:
@@ -19,10 +24,15 @@ class ProjectStore:
         self._lock = threading.RLock()
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.path, timeout=30)
         connection.row_factory = sqlite3.Row
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -37,15 +47,26 @@ class ProjectStore:
             )
 
     def save(self, project: Project) -> Project:
-        project.updated_at = now_iso()
-        payload = json.dumps(project.model_dump(mode="json"), ensure_ascii=False)
+        previous_updated_at = project.updated_at
+        updated_at = now_iso()
+        state = project.model_dump(mode="json")
+        state["updated_at"] = updated_at
+        payload = json.dumps(state, ensure_ascii=False)
         with self._lock, self._connect() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 "INSERT INTO projects(id, updated_at, state_json) VALUES (?, ?, ?) "
-                "ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at, state_json=excluded.state_json",
-                (project.id, project.updated_at, payload),
+                "ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at, state_json=excluded.state_json "
+                "WHERE projects.updated_at = ?",
+                (project.id, updated_at, payload, previous_updated_at),
             )
+            if cursor.rowcount != 1:
+                raise StorageConflict("Project was updated by another request.")
+        project.updated_at = updated_at
         return project
+
+    def check_connection(self) -> None:
+        with self._connect() as connection:
+            connection.execute("SELECT 1")
 
     def get(self, project_id: str) -> Project | None:
         with self._lock, self._connect() as connection:
@@ -83,7 +104,7 @@ class PostgresProjectStore:
             raise ValueError("DATABASE_URL cannot be empty.")
         self.database_url = database_url
         self._lock = threading.RLock()
-        self._initialize()
+        self._initialized = False
 
     def _connect(self) -> Any:
         try:
@@ -112,28 +133,48 @@ class PostgresProjectStore:
             )
             connection.commit()
 
+    def _ensure_initialized(self) -> None:
+        # Importing the ASGI entrypoint during a Vercel build must not connect
+        # to the database. Retry initialization if the first connection fails.
+        with self._lock:
+            if not self._initialized:
+                self._initialize()
+                self._initialized = True
+
+    def check_connection(self) -> None:
+        with self._connect() as connection:
+            connection.execute("SELECT 1")
+
     def save(self, project: Project) -> Project:
-        project.updated_at = now_iso()
+        self._ensure_initialized()
+        previous_updated_at = project.updated_at
+        updated_at = now_iso()
         payload = project.model_dump(mode="json")
+        payload["updated_at"] = updated_at
         try:
             from psycopg.types.json import Jsonb
         except ImportError as exc:  # pragma: no cover - guarded by _connect
             raise RuntimeError("PostgreSQL storage requires psycopg[binary].") from exc
         with self._lock, self._connect() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 f"""
                 INSERT INTO {self.table_name}(id, updated_at, state_json)
                 VALUES (%s, %s, %s)
                 ON CONFLICT(id) DO UPDATE SET
                     updated_at = EXCLUDED.updated_at,
                     state_json = EXCLUDED.state_json
+                WHERE automation_projects.updated_at = %s
                 """,
-                (project.id, project.updated_at, Jsonb(payload)),
+                (project.id, updated_at, Jsonb(payload), previous_updated_at),
             )
+            if cursor.rowcount != 1:
+                raise StorageConflict("Project was updated by another request.")
             connection.commit()
+        project.updated_at = updated_at
         return project
 
     def get(self, project_id: str) -> Project | None:
+        self._ensure_initialized()
         with self._lock, self._connect() as connection:
             row = connection.execute(
                 f"SELECT state_json FROM {self.table_name} WHERE id = %s", (project_id,)
@@ -144,6 +185,7 @@ class PostgresProjectStore:
         return Project.model_validate(json.loads(state) if isinstance(state, str) else state)
 
     def list(self) -> list[Project]:
+        self._ensure_initialized()
         with self._lock, self._connect() as connection:
             rows = connection.execute(
                 f"SELECT state_json FROM {self.table_name} ORDER BY updated_at DESC"
