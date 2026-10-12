@@ -28,6 +28,8 @@ ArtifactKind = Literal[
     "handover",
 ]
 GateStage = Literal["requirements_confirmation", "delivery_review", "uat"]
+AgentStatus = Literal["active", "planned", "human"]
+TaskType = Literal["agent", "human"]
 
 
 def now_iso() -> str:
@@ -47,6 +49,43 @@ class RequirementItem(BaseModel):
     priority: Literal["must", "should", "could"] = "must"
     acceptance_criteria: list[str] = Field(default_factory=list)
     source: str = "client brief"
+
+
+class AgentDefinition(BaseModel):
+    """The explicit role contract exposed to the team and the UI."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    role: str
+    stage: str
+    status: AgentStatus = "active"
+    description: str
+    responsibilities: list[str] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)
+    input_contract: str
+    output_contract: str
+    execution_key: str | None = None
+    parallel_group: str | None = None
+    approval_required: bool = False
+    max_retries: int = Field(default=2, ge=0, le=5)
+
+
+class WorkflowTaskDefinition(BaseModel):
+    """A graph task with dependencies rather than an unstructured prompt."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    label: str
+    stage: str
+    type: TaskType = "agent"
+    agent_id: str
+    dependencies: list[str] = Field(default_factory=list)
+    parallel_group: str | None = None
+    human_gate: str | None = None
+    responsibility: str
 
 
 class ProjectInput(BaseModel):

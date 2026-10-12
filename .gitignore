@@ -9,3 +9,7 @@ data/*.db
 data/*.sqlite
 out/
 .DS_Store
+.neon
+.env.local
+.env.vercel
+node_modules/

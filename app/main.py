@@ -9,7 +9,8 @@ from fastapi.responses import FileResponse
 
 from .agents import AIClient
 from .models import CreateProjectRequest, GateResponse, Project, summarize
-from .storage import ProjectStore
+from .registry import AGENT_CATALOG, agent_catalog
+from .storage import build_store
 from .workflow import WorkflowEngine, WorkflowError, workflow_topology
 
 
@@ -19,7 +20,7 @@ from .workflow import WorkflowEngine, WorkflowError, workflow_topology
 DB_PATH = os.getenv("AUTOMATION_DB_PATH") or (
     "/tmp/automation.db" if os.getenv("VERCEL") == "1" else "data/automation.db"
 )
-store = ProjectStore(DB_PATH)
+store = build_store(DB_PATH)
 engine = WorkflowEngine(store)
 app = FastAPI(title="Wooplix AI SDLC", version="0.1.0", description="Multi-agent software delivery orchestration")
 app.add_middleware(
@@ -45,6 +46,8 @@ def health() -> dict[str, object]:
         "service": "wooplix-ai-sdlc",
         "version": app.version,
         "ai_provider_configured": AIClient().enabled,
+        "storage_backend": store.backend,
+        "agent_count": len(AGENT_CATALOG),
         "workflow": "requirements → proposal + BRD → UI/UX + development → QA/UAT → documentation → human handover",
     }
 
@@ -52,6 +55,11 @@ def health() -> dict[str, object]:
 @app.get("/api/workflow")
 def workflow() -> dict[str, object]:
     return workflow_topology()
+
+
+@app.get("/api/agents")
+def agents() -> dict[str, object]:
+    return {"agents": agent_catalog()}
 
 
 @app.post("/api/projects", response_model=Project, status_code=201)

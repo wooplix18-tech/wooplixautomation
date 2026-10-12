@@ -12,27 +12,14 @@ from .models import (
     Project,
     ProjectInput,
     TraceEvent,
-    new_id,
     now_iso,
 )
+from .registry import WORKFLOW_TASKS
 from .storage import ProjectStore
 
 
 class WorkflowError(ValueError):
     pass
-
-
-WORKFLOW_TOPOLOGY = [
-    {"id": "client_requirements", "label": "Client requirements", "type": "human", "agent": "Client + Requirement Analyst"},
-    {"id": "proposal", "label": "Proposal generation", "type": "agent", "agent": "Proposal Generation Agent"},
-    {"id": "brd", "label": "Business requirements", "type": "agent", "agent": "BRD Agent"},
-    {"id": "ui_ux", "label": "UI/UX design", "type": "agent", "agent": "UI/UX Design Agent"},
-    {"id": "implementation", "label": "Software development", "type": "agent", "agent": "Software Development Agent"},
-    {"id": "qa_uat", "label": "Testing & UAT", "type": "agent", "agent": "Testing and UAT Agent"},
-    {"id": "documentation", "label": "Documentation & training", "type": "agent", "agent": "Documentation and Training Agent"},
-    {"id": "delivery_review", "label": "Human delivery review", "type": "human", "agent": "Delivery Lead + Client"},
-    {"id": "handover", "label": "Client handover", "type": "human", "agent": "Human Review and Handover"},
-]
 
 
 class WorkflowEngine:
@@ -253,4 +240,10 @@ class WorkflowEngine:
 
 
 def workflow_topology() -> dict[str, Any]:
-    return {"name": "Wooplix AI SDLC", "nodes": WORKFLOW_TOPOLOGY, "edges": [[row["id"], WORKFLOW_TOPOLOGY[index + 1]["id"]] for index, row in enumerate(WORKFLOW_TOPOLOGY[:-1])]}
+    nodes = [task.model_dump(mode="json") for task in WORKFLOW_TASKS]
+    edges = [
+        [dependency, task.id]
+        for task in WORKFLOW_TASKS
+        for dependency in task.dependencies
+    ]
+    return {"name": "Wooplix AI SDLC", "nodes": nodes, "edges": edges}

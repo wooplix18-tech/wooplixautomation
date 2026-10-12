@@ -85,7 +85,10 @@ class WorkflowTests(unittest.TestCase):
         labels = {node["label"] for node in topology["nodes"]}
         self.assertIn("Proposal generation", labels)
         self.assertIn("Client handover", labels)
-        self.assertEqual(len(topology["edges"]), len(topology["nodes"]) - 1)
+        self.assertIn(["client_requirements", "proposal"], topology["edges"])
+        self.assertIn(["client_requirements", "brd"], topology["edges"])
+        self.assertIn(["proposal", "implementation"], topology["edges"])
+        self.assertIn(["brd", "implementation"], topology["edges"])
 
 
 if __name__ == "__main__":

@@ -110,12 +110,18 @@ fallbacks ensure the workflow remains usable when the provider is unavailable,
 rate-limited, or returns malformed JSON. Credentials are never persisted in a
 project state or returned by the health endpoint.
 
+When `DATABASE_URL` is present, the API uses Neon PostgreSQL. Without it, local
+development uses SQLite so the workflow remains runnable without cloud setup.
+The Neon store keeps the complete validated project snapshot in JSONB and
+creates the `automation_projects` table automatically on startup.
+
 ## API
 
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/health` | Service and provider status |
 | `GET /api/workflow` | Workflow node and edge metadata |
+| `GET /api/agents` | Agent roles, responsibilities, contracts, and execution status |
 | `POST /api/projects` | Create a project and extract requirements |
 | `GET /api/projects` | List project summaries |
 | `GET /api/projects/{id}` | Restore complete durable project state |
@@ -166,7 +172,8 @@ highest-volume planning and documentation work.
 - `app/agents.py` — specialist agents and optional OpenAI-compatible adapter.
 - `app/workflow.py` — durable orchestration, parallel specialist execution,
   revision routing, and human checkpoints.
-- `app/storage.py` — SQLite project store.
+- `app/storage.py` — Neon PostgreSQL store with SQLite local fallback.
+- `app/registry.py` — explicit agent role contracts and dependency-aware task graph.
 - `app/main.py` — FastAPI API and static cockpit entrypoint.
 - `app/static/index.html` — zero-build responsive project dashboard.
 - `tests/test_workflow.py` — offline lifecycle, revision, persistence, and
@@ -174,8 +181,9 @@ highest-volume planning and documentation work.
 
 The orchestration state is intentionally compatible with a future LangGraph
 checkpointer migration. The `langgraph` integration is an optional dependency
-in `pyproject.toml`; the current core uses a small explicit state machine so a
-new checkout is runnable before optional graph dependencies are installed.
+in `pyproject.toml`; the current core uses an explicit dependency-aware state
+machine while the agent registry establishes the role, responsibility, input,
+output, tool, and approval contracts that LangGraph nodes will use.
 
 ## Delivery target
 
