@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Wooplix · AI Workroom</title>
+  <link rel="stylesheet" href="/assets/flow.css?v=20261012-5">
+  <script defer src="/assets/flow.js?v=20261012-5"></script>
+</head>
+<body>
+  <aside class="rail">
+    <a class="brand" href="/"><span class="brand-mark">W</span><span>wooplix<span class="brand-sub">AI WORKROOM</span></span></a>
+    <button id="new-run" class="primary wide">＋ New request</button>
+    <div class="rail-label">YOUR REQUESTS <button id="refresh-runs" class="icon" aria-label="Refresh requests">↻</button></div>
+    <nav id="runs" aria-label="Your requests"><p class="muted">Loading requests…</p></nav>
+    <div class="rail-footer"><a href="/">← Requirements chat</a><span id="storage-status" class="muted">Checking storage…</span><span id="provider-status" class="muted"></span></div>
+  </aside>
+  <main class="studio">
+    <header class="studio-header">
+      <div><div class="breadcrumb">YOUR PROJECT</div><h1 id="run-name">New request</h1><p class="muted workflow-explainer">We read your brief, draft a proposal, and pause for your team to review it.</p></div>
+      <div class="header-meta"><span id="stream-status" class="connection">Not connected</span><span id="run-status" class="pill">Architecture</span></div>
+    </header>
+    <section class="toolbar" aria-label="Execution controls">
+      <div class="toolbar-left"><span class="tab-label">Your work, step by step</span><span id="mode-label" class="muted">AI prepares each step for review</span></div>
+      <div class="controls">
+        <button id="step-run" hidden title="Continue to the next decision">Continue</button>
+        <button id="retry-run" hidden>↻ Retry unfinished</button>
+        <button id="stop-run" hidden>■ Cancel run</button>
+        <button id="execute-run" class="primary">▶ Continue</button>
+      </div>
+    </section>
+    <div id="notice" class="notice" hidden role="status"></div>
+    <div class="workbench">
+      <section id="viewport" class="viewport" aria-label="Workflow canvas. Drag background to pan, scroll to zoom, click a node to inspect.">
+        <div class="canvas-caption"><span class="live-dot"></span> YOUR REQUEST <small>Green means finished · amber means your team needs to decide</small></div>
+        <div id="world" class="world">
+          <svg id="edges" class="edges" width="1700" height="800" aria-label="Task dependencies"></svg>
+          <div id="nodes"></div>
+        </div>
+        <div class="canvas-legend"><span><i class="dot pending"></i>Not started</span><span><i class="dot running"></i>Working</span><span><i class="dot completed"></i>Done</span><span><i class="dot waiting"></i>Your review</span><span><i class="dot failed"></i>Needs attention</span></div>
+        <div class="zoom-controls"><button id="zoom-out" aria-label="Zoom out">−</button><span id="zoom-value">100%</span><button id="zoom-in" aria-label="Zoom in">＋</button><button id="fit" aria-label="Fit graph">Fit</button><button id="reset-layout" title="Reset node layout">Reset</button></div>
+      </section>
+      <aside id="inspector" class="inspector" aria-label="Step details">
+        <div class="inspector-header"><span>STEP DETAILS</span><button id="close-inspector" class="icon" aria-label="Close details">×</button></div>
+        <div id="node-heading" class="node-heading"><div class="empty-symbol">⌘</div><h2>Select a step</h2><p class="muted">See what the AI used and the document it prepared.</p></div>
+        <div id="inspect-tabs" class="inspect-tabs" hidden><button data-tab="details" class="active">About</button><button data-tab="input">What it used</button><button data-tab="output">What it made</button><button data-tab="events">Activity</button></div>
+        <div id="inspect-body" class="inspect-body"></div>
+      </aside>
+    </div>
+    <section class="event-console" aria-label="What is happening">
+      <div class="console-header"><strong>What is happening</strong><span id="execution-hint" class="muted">Start with your brief. We’ll show each completed step here.</span></div>
+      <div id="event-log" class="event-log" role="log" aria-live="polite"><div class="log-empty">Your request steps will appear here.</div></div>
+    </section>
+  </main>
+  <dialog id="create-dialog">
+    <form id="create-flow">
+      <div class="dialog-heading"><div><p class="breadcrumb">START HERE</p><h2>Tell us what you need</h2></div><button type="button" id="close-dialog" class="icon" aria-label="Close dialog">×</button></div>
+      <p class="muted">Upload one requirements file or paste your brief. The AI will analyze it and prepare a proposal for your team.</p>
+      <label>Project name<input name="project_name" required minlength="2" maxlength="120" placeholder="For example, Zoho event management"></label>
+      <label>Upload your requirements file<input id="brief-file" type="file" accept=".txt,.md,.pdf,.docx"><small id="brief-file-status" class="muted">Word, PDF or text · up to 2 MB</small></label>
+      <label>Or paste the requirements<textarea name="brief" required minlength="20" maxlength="30000" rows="6" placeholder="Include what you need, how the team works, and what the final result should include."></textarea></label>
+      <div class="form-row"><label>What are you planning?<select name="project_type"><option value="website">Website</option><option value="software_product">Software or system</option><option value="mobile_app">Mobile app</option><option value="internal_tool">Business process or internal tool</option></select></label><label>How should the AI work?<select name="execution_mode"><option value="reviewed">Pause for team review</option><option value="automatic">Prepare a draft pack</option></select></label></div>
+      <p class="muted small">The AI will not make prices up. Your team decides when to approve the proposal and request the BRD.</p>
+      <p id="create-error" class="error" role="alert"></p>
+      <button class="primary wide" type="submit">Start analyzing →</button>
+    </form>
+  </dialog>
+  <div id="toast" hidden role="alert"></div>
+</body>
+</html>

@@ -49,3 +49,18 @@ class ProposalIntegrationTests(unittest.TestCase):
     def test_source_ids_remain_stable_when_lines_reordered(self):
         from app.agents import _requirement_id
         self.assertEqual(_requirement_id('Customers can book appointments.',1), _requirement_id('Customers can book appointments.',8))
+
+    def test_live_graph_emits_real_nested_start_and_completion_events(self):
+        from langgraph.graph import StateGraph, START, END
+        from app.progress import observe
+
+        graph = StateGraph(dict)
+        graph.add_node('supervisor', lambda state: {**state, 'status': 'draft_ready', 'proposal': {'project_introduction': 'CRM plan'}, 'quality_report': {'passed': True}})
+        graph.add_edge(START, 'supervisor')
+        graph.add_edge('supervisor', END)
+        events = []
+        with patch('app.proposal_agent.multi_agent_graph.build_graph', return_value=graph.compile()), observe(lambda kind, message, data: events.append((kind, data))):
+            artifact = IntegratedDocumentAgent('proposal').run(self.project)
+        self.assertEqual(artifact.content['integration']['status'], 'quality_checked_draft')
+        self.assertTrue(any(kind == 'subagent_started' and data['subagent'] == 'supervisor' for kind, data in events))
+        self.assertTrue(any(kind == 'subagent_completed' and data['subagent'] == 'supervisor' for kind, data in events))

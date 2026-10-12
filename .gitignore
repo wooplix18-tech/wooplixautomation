@@ -15,6 +15,7 @@ out/
 .env.local
 .env.vercel
 node_modules/
+vendor/
 .vercel/
 dist/
 *.egg-info/

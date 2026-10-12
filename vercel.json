@@ -4,7 +4,11 @@
   "functions": {
     "app/main.py": {
       "maxDuration": 300,
-      "excludeFiles": "{.env*,.neon,.agents/**,.venv/**,node_modules/**,data/**,tests/**,scripts/**}"
+      "excludeFiles": "{.env*,.neon,.agents/**,.venv/**,node_modules/**,vendor/**,data/**,tests/**,scripts/**}"
+    },
+    "api/render-pdf.php": {
+      "runtime": "vercel-php@0.9.0",
+      "maxDuration": 60
     }
   }
 }

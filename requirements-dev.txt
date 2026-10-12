@@ -1,2 +1,4 @@
 -r requirements.txt
 httpx==0.28.1
+playwright==1.63.0
+Pillow==12.3.0

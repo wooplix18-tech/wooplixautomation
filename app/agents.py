@@ -11,6 +11,8 @@ from typing import Any
 from urllib.request import Request, urlopen
 
 from .models import Artifact, Project, RequirementItem
+from .progress import emit
+from .groq_limiter import wait_for_groq_slot
 
 
 class AIClient:
@@ -42,7 +44,9 @@ class AIClient:
 
     def json(self, system: str, prompt: str, fallback: dict[str, Any]) -> dict[str, Any]:
         if not self.enabled:
+            emit("template", "No model key configured; deterministic template used.")
             return fallback
+        emit("model_started", "Calling the model provider.", provider=self.provider, model=self.model)
         payload = {
                 "model": self.model,
                 "temperature": 0.2,
@@ -69,6 +73,8 @@ class AIClient:
                 # an OpenAI-compatible base URL used by the former adapter.
                 sdk_base_url = self.base_url.removesuffix("/openai/v1")
                 with Groq(api_key=self.api_key, base_url=sdk_base_url, timeout=45, max_retries=0) as client:
+                    if self.provider == "groq":
+                        wait_for_groq_slot()
                     response = client.chat.completions.create(**payload)
                 content = response.choices[0].message.content
             else:
@@ -77,9 +83,13 @@ class AIClient:
                     raw = json.loads(response.read().decode("utf-8"))
                 content = raw["choices"][0]["message"]["content"]
             parsed = json.loads(content)
-            return parsed if isinstance(parsed, dict) else fallback
+            if not isinstance(parsed, dict):
+                raise ValueError("Expected a JSON object")
         except (GroqError, OSError, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+            emit("fallback", "Provider unavailable or invalid JSON; template fallback used.", provider=self.provider, model=self.model)
             return fallback
+        emit("model_completed", "Structured model response received.", provider=self.provider, model=self.model)
+        return parsed
 
 
 def _strings(value: Any) -> list[str]:
@@ -206,6 +216,45 @@ class ProposalAgent(BaseAgent):
     def run(self, project: Project) -> Artifact:
         inp = project.input
         requirements = project.requirements
+        source = inp.brief.lower()
+        zoho_event = "zoho" in source and any(word in source for word in ("event", "backstage", "crm"))
+        if zoho_event:
+            commercial_labels = [
+                "Zoho CRM implementation", "Zoho Marketing Automation implementation",
+                "Zoho Projects implementation", "Zoho Creator and Backstage implementation",
+                "Zoho Analytics implementation", "Integration and customization",
+                "WhatsApp and SMS integration", "Data migration and cleansing", "Training",
+                "Post-implementation support", "Additional licenses and add-ons",
+            ]
+            scope_by_area = {
+                "Zoho CRM": "Lead capture and BDM assignment; duplicate-company handling; multiple locations and contacts; event and batch records; existing-data cleansing; follow-up automation.",
+                "Zoho Marketing Automation": "Email, WhatsApp and SMS campaigns; marketing journeys; audience segmentation; follow-up automation and campaign tracking.",
+                "Zoho Projects": "Event-based project templates; tasks, milestones and assignment; planned vs actual hours; billable and non-billable time; timesheets, work notes, automation, dashboards, reports and team training.",
+                "Zoho Creator and Backstage": "Discovery-led recommendation and implementation for event management, custom applications, forms, workflows, CRM integration, reports, dashboards and user roles.",
+                "Zoho Analytics": "Integrated CRM, BDM, lead, event, campaign, Projects, effort and team reporting, including a management dashboard.",
+            }
+            scope = [{"area": area, "scope": details} for area, details in scope_by_area.items()]
+            delivery_phases = [
+                "Discovery, process mapping and solution design", "CRM configuration and data cleansing",
+                "Marketing automation and messaging integrations", "Projects setup and event templates",
+                "Creator / Backstage application design and build", "Analytics integration and dashboards",
+                "End-to-end validation, practical training and go-live readiness",
+            ]
+            commercial_items = [{"item": label, "amount": "", "basis": "Separate estimate after discovery and license review"}
+                                for label in commercial_labels]
+            fallback = {
+                "executive_summary": "Wooplix will plan and implement an integrated Zoho One operating system for the client’s event-management business, covering CRM, marketing, project delivery, event applications, analytics, communications, migration and practical training.",
+                "objectives": ["Connect the requested Zoho applications around shared event, company, location, contact and campaign data.", "Give the team usable workflows, reports and practical training, with scope and costs reviewed before implementation."],
+                "in_scope": scope,
+                "delivery_approach": [{"phase": phase, "duration": "To be confirmed after discovery", "review_point": "Client review and approval before the next phase"} for phase in delivery_phases],
+                "commercials": {"items": commercial_items, "total": "", "note": "No implementation price or license cost has been invented. Confirm volumes, editions, messaging providers and delivery scope before quoting."},
+                "training_plan": ["Role-based working sessions for CRM, Marketing Automation, Projects, Creator, Analytics, automations and reports.", "Use the client’s event, lead, campaign and project scenarios; include practice exercises and question time.", "Confirm attendees, session count, format and schedule during discovery."],
+                "support": "Define the post-implementation support period, channels, service hours, response targets and included change allowance before approval.",
+                "assumptions": ["The client will provide Zoho One access, current CRM exports, data definitions, user/role lists, event processes and messaging-provider details.", "WhatsApp/SMS provider availability, consent rules, message charges and Zoho edition limits will be validated before configuration.", "Existing data will be profiled first; cleansing rules and migration acceptance will be agreed before records are changed.", "Creator and Backstage workflows are discovery items because the application has not yet been started."],
+                "open_decisions": ["Confirm user counts, Zoho editions, BDM assignment rules, event/batch relationships and duplicate-resolution rules.", "Confirm WhatsApp/SMS provider, consent and opt-out handling, message volumes and who supplies templates.", "Confirm Creator versus Backstage boundaries, migration volume, dashboard KPIs, training format and support period."],
+                "next_step": "Run a discovery workshop, validate data and licensing, then approve the detailed scope, phased schedule and itemized commercial estimate.",
+            }
+            return self.artifact("proposal", f"Zoho One Implementation Proposal — {inp.project_name}", fallback, [self.name])
         fallback = {
             "executive_summary": (
                 f"{inp.client_name} can use Wooplix's AI-assisted delivery system to take "
@@ -412,31 +461,263 @@ class DocumentationAgent(BaseAgent):
     name = "documentation_training_agent"
 
     def run(self, project: Project) -> Artifact:
-        content = {
-            "documentation_set": [
-                {"title": "Product overview", "audience": "Client stakeholders", "status": "Prepared from approved scope"},
-                {"title": "User guide", "audience": "Operators and end users", "status": "Customize with final screenshots and terminology"},
-                {"title": "Technical runbook", "audience": "Engineering / operations", "status": "Populate deployment secrets and environment values during handover"},
-                {"title": "Support and incident guide", "audience": "Support team", "status": "Confirm escalation contacts and service expectations"},
-            ],
-            "training_plan": [
-                "60-minute stakeholder walkthrough of completed journeys",
-                "Role-based operator session with recorded examples",
-                "Engineering handoff covering repository, environments, monitoring, and rollback",
-            ],
-            "knowledge_transfer_checklist": [
-                "Repository and branch permissions transferred",
-                "Environment variables and secret ownership documented",
-                "Known issues and prioritized backlog reviewed",
-                "Support and escalation contacts confirmed",
-            ],
-            "source_links": [artifact.kind for artifact in project.artifacts],
+        sources = {artifact.kind: artifact for artifact in project.artifacts}
+        brd = sources.get("brd").content if sources.get("brd") else {}
+        ux = sources.get("ui_ux").content if sources.get("ui_ux") else {}
+        implementation = sources.get("implementation").content if sources.get("implementation") else {}
+        qa = sources.get("qa_uat").content if sources.get("qa_uat") else {}
+
+        requirements = brd.get("functional_requirements") or [
+            {"id": item.id, "requirement": item.statement,
+             "acceptance_criteria": item.acceptance_criteria}
+            for item in project.requirements
+        ]
+        if not isinstance(requirements, list):
+            requirements = []
+
+        def clean_line(value: str) -> str:
+            value = re.sub(r"^[\s•▪◦*-]+", "", value).strip()
+            return re.sub(r"^\d+[.)]\s*", "", value).strip()
+
+        def items_in_section(start_pattern: str, end_pattern: str) -> list[str]:
+            found, values = False, []
+            for raw_line in project.input.brief.splitlines():
+                line = raw_line.strip()
+                if re.match(start_pattern, line, re.I):
+                    found = True
+                    continue
+                if found and re.match(end_pattern, line, re.I):
+                    break
+                if not found:
+                    continue
+                line = clean_line(line)
+                if not line or line.endswith(":") or line.casefold().startswith(("please provide", "we require practical training")):
+                    continue
+                if line not in values:
+                    values.append(line)
+            return values
+
+        training_topics = items_in_section(
+            r"^(?:\d+[.)]\s*)?Training\s*$",
+            r"^(?:\d+[.)]\s*)?Cost Proposal Required\s*$",
+        )
+        cost_categories = items_in_section(
+            r"^(?:\d+[.)]\s*)?Cost Proposal Required\s*$",
+            r"^(?:Please also provide|Main Objective)\b",
+        )
+        section_heading = re.compile(
+            r"^(?:\d+[.)]\s*)?(?:our requirement|main objective|training|cost proposal required|"
+            r"zoho (?:crm|marketing automation|projects|creator|analytics)(?:\s*[,—–-].*)?)$",
+            re.I,
+        )
+        instruction_prefixes = (
+            "we are using zoho", "we have not started", "we need your recommendation",
+            "we require practical training", "please provide separate", "please also provide",
+            "we want one integrated system",
+        )
+        supplied_integrations = {" ".join(item.casefold().split()) for item in project.input.integrations}
+        supplied_cost_categories = {" ".join(item.casefold().split()) for item in cost_categories}
+        filtered_requirements = []
+        seen_requirements = set()
+        for row in requirements:
+            if not isinstance(row, dict):
+                continue
+            statement = row.get("requirement") or row.get("statement")
+            if not isinstance(statement, str):
+                continue
+            statement = clean_line(statement)
+            normalized = " ".join(statement.casefold().split())
+            if (not normalized or section_heading.match(statement)
+                    or normalized in supplied_integrations
+                    or normalized in supplied_cost_categories
+                    or normalized.startswith(instruction_prefixes)
+                    or "training" in normalized):
+                continue
+            if normalized not in seen_requirements:
+                seen_requirements.add(normalized)
+                filtered_requirements.append({**row, "requirement": statement})
+        requirements = filtered_requirements
+        if not training_topics:
+            training_topics = [item for item in project.input.integrations if item.casefold().startswith("zoho")]
+        brd_requirements = brd.get("functional_requirements") or []
+        if isinstance(brd_requirements, list):
+            for row in brd_requirements:
+                if not isinstance(row, dict):
+                    continue
+                topic = clean_line(str(row.get("requirement") or row.get("statement", "")))
+                if ("training" in topic.casefold() and topic.casefold() not in {"training", "cost proposal required"}
+                        and not topic.casefold().startswith(instruction_prefixes) and topic not in training_topics):
+                    training_topics.append(topic)
+        users = brd.get("personas") or project.input.target_users or ["Primary users — confirm before release"]
+        if not isinstance(users, list):
+            users = [users]
+        users = [
+            user.get("name") or user.get("role") or user.get("persona") or "User — confirm role"
+            if isinstance(user, dict) else str(user)
+            for user in users
+        ]
+        screens = ux.get("screens") or []
+        journeys = ux.get("journeys") or []
+        if not isinstance(screens, list):
+            screens = []
+        if not isinstance(journeys, list):
+            journeys = []
+        flow_steps = [step for journey in journeys if isinstance(journey, dict)
+                      for step in journey.get("steps", []) if isinstance(step, str)]
+        if not flow_steps:
+            flow_steps = ["Start the task", "Complete the required steps", "Check the result"]
+
+        user_tasks = []
+        for row in requirements:
+            if not isinstance(row, dict):
+                continue
+            criteria = row.get("acceptance_criteria", [])
+            if isinstance(criteria, str):
+                criteria = [criteria]
+            elif not isinstance(criteria, list):
+                criteria = []
+            requirement_id = row.get("id")
+            linked_screens = [screen.get("name") for screen in screens
+                              if isinstance(screen, dict) and screen.get("name")
+                              and requirement_id in screen.get("requirement_links", [])]
+            user_tasks.append({
+                "requirement_id": requirement_id or "Needs traceability",
+                "task": row.get("requirement") or row.get("statement", "User task from the BRD"),
+                "related_screens": linked_screens or "Map this requirement to a screen before release.",
+                "acceptance_checks": [item for item in criteria if isinstance(item, str)],
+                "status": "Draft — confirm exact controls and wording against the implemented product.",
+            })
+
+        test_cases = qa.get("test_cases") or []
+        if not isinstance(test_cases, list):
+            test_cases = []
+        role_keywords = {
+            "bdm": ("crm", "lead", "bdm", "contact", "company", "location"),
+            "sales": ("crm", "lead", "bdm", "contact", "company", "location"),
+            "marketing": ("marketing", "campaign", "audience", "journey", "whatsapp", "sms", "email"),
+            "event": ("event", "project", "task", "milestone", "timesheet", "billable", "batch"),
+            "operation": ("event", "project", "task", "milestone", "timesheet", "billable", "batch"),
+            "admin": ("creator", "custom", "role", "workflow", "integration", "migration", "data"),
+            "management": ("analytics", "dashboard", "report", "performance", "hours", "campaign"),
         }
-        model_hint = self.model_hint("Suggest up to two role-specific training tips for this brief.", project)
-        tips = _strings(model_hint.get("training_tips"))
-        if tips:
-            content["training_plan"].extend(tips[:2])
-        return self.artifact("documentation", f"Documentation & Training Plan — {project.input.project_name}", content, [self.name])
+        def training_requirements(user: str) -> list[dict[str, Any]]:
+            rows = [row for row in requirements if isinstance(row, dict)]
+            role = next((name for name in role_keywords if name in user.casefold()), None)
+            if role:
+                words = role_keywords[role]
+                matched = [row for row in rows if any(
+                    word in (row.get("requirement") or row.get("statement", "")).casefold()
+                    for word in words
+                )]
+                if matched:
+                    rows = matched
+            return rows[:3]
+
+        training = [{
+            "audience": user,
+            "practice": [
+                {"requirement_id": row.get("id", "Needs traceability"),
+                 "task": row.get("requirement") or row.get("statement", "Complete the core task"),
+                 "success_check": ((row.get("acceptance_criteria") if isinstance(row.get("acceptance_criteria"), list)
+                                    else [row.get("acceptance_criteria")]) or ["Confirm the expected result."])[0]}
+                for row in training_requirements(user)
+            ],
+        } for user in users]
+
+        documented_requirement_ids = {row.get("id") for row in requirements if row.get("id")}
+        support_scenarios = [{
+            "scenario": case.get("scenario", "Planned test scenario"),
+            "requirement_id": case.get("requirement_id", "Needs traceability"),
+            "expected_result": case.get("expected_result", "Confirm the expected result in the approved BRD."),
+        } for case in test_cases if isinstance(case, dict)
+            and case.get("requirement_id") in documented_requirement_ids]
+
+        architecture = implementation.get("architecture", {})
+        api_contracts = implementation.get("api_contracts", [])
+        release_gates = qa.get("release_gates", [])
+        sources_used = [{"artifact": kind, "title": artifact.title, "version": artifact.version}
+                        for kind, artifact in sources.items()
+                        if kind in {"proposal", "brd", "ui_ux", "implementation", "qa_uat"}]
+        content = {
+            "document_status": (
+                "Planning draft generated from this project's saved artifacts. "
+                "The system has not inspected or verified a built application. "
+                "Confirm procedures, screenshots, technical settings, and support ownership before release."
+            ),
+            "project_overview": {
+                "project": project.input.project_name,
+                "purpose": project.input.brief,
+                "users": users,
+                "goals": project.input.goals,
+                "platforms": project.input.platforms,
+                "connected_systems": project.input.integrations,
+            },
+            "user_guide": {
+                "purpose": "Help each intended user complete the tasks described in the BRD.",
+                "audience": users,
+                "getting_started": [
+                    "Confirm the user has the access and account required by the approved product design.",
+                    "Choose the task that matches the user's goal below.",
+                    "Follow the approved interface and compare the result with the acceptance checks.",
+                ],
+                "proposed_journey_to_validate": flow_steps,
+                "tasks": user_tasks,
+                "screens_from_design": screens,
+            },
+            "technical_reference": {
+                "status": "Proposed technical reference; verify against the source repository and deployed environment.",
+                "architecture": architecture,
+                "api_contracts": api_contracts,
+                "quality_gates": implementation.get("starter_repository", {}).get("quality_gates", []),
+                "release_checks": release_gates,
+                "decisions_to_confirm": implementation.get("open_technical_decisions", []),
+                "security_notes": [
+                    "Store credentials in the approved secrets manager; do not copy secret values into this document.",
+                    "Confirm authentication, access roles, backups, monitoring, and rollback against the deployed system.",
+                ],
+            },
+            "support_runbook": {
+                "status": "Draft from planned test cases; actual monitoring, contacts, and service targets are not configured here.",
+                "triage_steps": [
+                    "Record the affected user role, time, task, and steps to reproduce.",
+                    "Compare the observed behavior with the related requirement and expected result.",
+                    "Check the approved service status and redacted application logs.",
+                    "Capture a redacted screenshot or log excerpt; never include passwords or API keys.",
+                    "Escalate blocking or security issues to the confirmed service owner.",
+                    "Record the resolution and update the known-issues list.",
+                ],
+                "known_scenarios": support_scenarios,
+                "contacts_to_confirm": ["Product owner", "Technical owner", "Support escalation contact"],
+                "service_targets": "Confirm response and recovery targets with the service owner.",
+            },
+            "training_guide": {
+                "approach": "Use role-based practice tasks and acceptance checks; agree delivery format with the project owner.",
+                "topics_requested": training_topics,
+                "sessions": training,
+                "materials_to_prepare": ["Approved interface screenshots", "Practice accounts or safe sample data", "Quick-reference task guide"],
+            },
+            "cost_proposal_request": {
+                "requested_breakdown": cost_categories,
+                "status": "Requested by the client; no implementation fees, license prices, or support rates were supplied or estimated by this documentation agent.",
+            },
+            "handover_checklist": [
+                {"item": "Verify this guide against the implemented and deployed product", "status": "To do"},
+                {"item": "Add approved screenshots and final interface terminology", "status": "To do"},
+                {"item": "Confirm repository, environment, monitoring, backup, and rollback procedures", "status": "To do"},
+                {"item": "Name product, technical, and support owners", "status": "To do"},
+                {"item": "Review known issues and open decisions with the client", "status": "To do"},
+            ],
+            "open_items": [
+                "Implementation code and deployed behavior were not available to this agent.",
+                "Confirm screen-level steps and user permissions after the interface is built.",
+                "Confirm support contacts, monitoring links, data retention, and recovery procedures.",
+                "Clarify whether ‘Backstages’ means backstage event operations and define the Creator workflows it requires.",
+                "Confirm Zoho editions, license/add-on prices, and WhatsApp/SMS providers before preparing a commercial quote.",
+                "Agree the implementation timeline, milestones, and post-implementation support scope with the delivery team.",
+            ],
+            "source_artifacts": sources_used,
+        }
+        return self.artifact("documentation", f"Documentation & Training Pack — {project.input.project_name}", content, [self.name])
 
 
 class HandoverAgent(BaseAgent):

@@ -54,6 +54,14 @@ def _load_dotenv():
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b"
 
+
+def groq_client(api_key, timeout=90, max_retries=0):
+    """Build a Groq client without duplicating the OpenAI-compatible path."""
+    from groq import Groq
+    base_url = os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
+    base_url = base_url.removesuffix("/openai/v1")
+    return Groq(api_key=api_key, base_url=base_url, timeout=timeout, max_retries=max_retries)
+
 # Collect all API keys (GROQ_API_KEY, GROQ_API_KEY_2, GROQ_API_KEY_3, …)
 def _collect_groq_keys():
     keys = []
@@ -316,7 +324,7 @@ notes, evidence appendices, marketing adjectives or words such as seamless/robus
 Use plain English and return ONLY valid JSON.'''
 
     candidate_models = [GROQ_MODEL]
-    for fallback in ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
+    for fallback in ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]:
         if fallback not in candidate_models:
             candidate_models.append(fallback)
 
@@ -326,7 +334,7 @@ Use plain English and return ONLY valid JSON.'''
 
     last = {}
     for api_key, model_name in combos:
-        client = Groq(api_key=api_key, timeout=90, max_retries=0)
+        client = groq_client(api_key, timeout=90, max_retries=0)
         for attempt in range(2):
             try:
                 # Try json_object format first; on retry try without strict json_object format (parse_json_safely extracts it)
@@ -346,7 +354,14 @@ Use plain English and return ONLY valid JSON.'''
                 if requirement_sections and isinstance(last, dict):
                     last['scope'] = confirmed_scope(requirement_sections, req_text)
                 if _looks_like_proposal(last) and last.get('scope'):
-                    gaps = coverage_gaps(last, requirement_sections or []) + unsupported_scope(last, req_text)
+                    # Commercial rows are applied deterministically by the
+                    # commercial specialist after the prose writer returns.
+                    # Checking them here makes a valid draft fail before those
+                    # source-grounded, intentionally blank rows exist.
+                    scope_sections = [section for section in (requirement_sections or [])
+                                      if not any(token in section.get('product', '').lower()
+                                                 for token in ('licen', 'commercial', 'cost', 'pricing'))]
+                    gaps = coverage_gaps(last, scope_sections) + unsupported_scope(last, req_text)
                     if gaps:
                         print(f'Draft coverage check: {len(gaps)} required items need correction.', flush=True)
                         user_prompt += '\n\nPREVIOUS DRAFT MISSED THESE REQUIRED ITEMS. Return the complete corrected proposal covering all of them:\n' + json.dumps(gaps, ensure_ascii=False)

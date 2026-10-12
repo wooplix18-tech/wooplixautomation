@@ -8,6 +8,7 @@ import time
 import re
 
 from . import wooplix_agent as agent
+from ..groq_limiter import wait_for_groq_slot
 from .proposal_scope import requested_products, scope_inventory, product_matches, preserve_source_bullets
 
 
@@ -24,7 +25,7 @@ def _groq_call_with_fallback(**kwargs):
     """Call the Groq API with automatic key rotation + model fallback on rate-limit (429).
 
     Rotation order:
-      for each model in [GROQ_MODEL, openai/gpt-oss-120b, openai/gpt-oss-20b]:
+       for each model in [GROQ_MODEL, openai/gpt-oss-120b, openai/gpt-oss-20b, qwen/qwen3.8-27b]:
           for each api_key in GROQ_API_KEYS:
               try request → on RateLimitError try next key, then next model
 
@@ -35,7 +36,7 @@ def _groq_call_with_fallback(**kwargs):
 
     primary = agent.GROQ_MODEL
     candidate_models = [primary]
-    for fallback in ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
+    for fallback in ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]:
         if fallback not in candidate_models:
             candidate_models.append(fallback)
 
@@ -54,8 +55,9 @@ def _groq_call_with_fallback(**kwargs):
             else:
                 call_kwargs.pop('reasoning_effort', None)
             for api_key in api_keys:
-                groq_client = Groq(api_key=api_key, timeout=90, max_retries=0)
+                groq_client = agent.groq_client(api_key, timeout=90, max_retries=0)
                 try:
+                    wait_for_groq_slot()
                     return groq_client.chat.completions.create(**call_kwargs)
                 except RateLimitError as exc:
                     last_exc = exc

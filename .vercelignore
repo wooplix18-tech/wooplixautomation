@@ -5,6 +5,7 @@
 .env*
 !.env.example
 node_modules
+vendor
 data
 __pycache__
 **/__pycache__

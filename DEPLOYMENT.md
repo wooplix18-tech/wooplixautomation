@@ -15,6 +15,8 @@ cd /Users/ankitapandey/Projects/rahul3
 
 Open http://127.0.0.1:8000/. Stop the server with Ctrl+C. For a fresh machine,
 install Python 3.14, create `.venv`, and install `requirements.txt` first.
+PDF downloads also need PHP 8.1+ and Composer; run `composer install` to
+install Dompdf locally.
 
 ## 2. Upload the corrected source to GitHub
 
@@ -42,6 +44,7 @@ before clicking Deploy. Use these settings:
 | Python version | 3.14, from `.python-version` |
 | Build / Install / Output | Leave framework defaults; no npm build |
 | Entrypoint | `app.main:app`, already configured |
+| PDF renderer | `api/render-pdf.php` via the configured Vercel PHP runtime |
 
 This follows the current [Vercel FastAPI setup](https://vercel.com/docs/frameworks/backend/fastapi)
 and [Python runtime documentation](https://vercel.com/docs/functions/runtimes/python).
@@ -79,6 +82,27 @@ for a private workspace; the Neon Auth example does not protect FastAPI routes.
 3. Paste a brief into the project assistant or upload a requirements document.
    Click Generate delivery pack. Expect seven artifacts and `pack_ready` status.
 4. Reload the dashboard and confirm that the project remains.
+
+### Live-flow deployment checks
+
+The new creation UI queues projects through `/api/runs` and opens `/workflow`.
+This requires a shared `DATABASE_URL` on Vercel; the live endpoint deliberately
+returns 503 instead of accepting an ephemeral, cross-instance SQLite run.
+Verify `/assets/flow.js`, `/api/live/topology`, node inspection, the SSE
+`/api/projects/{id}/events` endpoint, and a PDF download after publishing the
+changes. The Dompdf function renders the saved artifact and does not call AI.
+
+The API executes one parallel wave per `/execute` request. It does not launch
+fire-and-forget background threads after a response. For unattended execution,
+host `.venv/bin/python -m scripts.worker` on a long-lived Python service with
+the same environment and database. The browser then acts as an observer; both
+worker and browser claims are fenced against duplicates. Do not deploy this
+loop as a short-lived Vercel function.
+
+Events reconnect every 25 seconds and replay from a cursor. An interrupted wave
+keeps completed outputs; after the 360-second lease expires, Retry recovers its
+unfinished nodes. Individual document subgraphs can exceed the Vercel duration
+and must ultimately get nested checkpoints or execute on the separate worker.
 
 For CLI deployment, run `vercel login` using the intended account, then
 `vercel` from the project root. Select the intended team/project and configure

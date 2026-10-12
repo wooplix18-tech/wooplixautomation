@@ -9,7 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ProjectType = Literal["website", "mobile_app", "software_product", "internal_tool"]
 ProjectStatus = Literal[
+    "queued",
     "requirements_review",
+    "proposal_review",
     "running",
     "delivery_review",
     "uat",
@@ -28,7 +30,7 @@ ArtifactKind = Literal[
     "documentation",
     "handover",
 ]
-GateStage = Literal["requirements_confirmation", "delivery_review", "uat"]
+GateStage = Literal["requirements_confirmation", "proposal_confirmation", "delivery_review", "uat"]
 AgentStatus = Literal["active", "planned", "human"]
 TaskType = Literal["agent", "human"]
 
@@ -154,6 +156,49 @@ class HumanGate(BaseModel):
     resolved_at: str | None = None
 
 
+class NodeExecution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    status: Literal["pending", "running", "completed", "failed", "waiting", "skipped", "cancelled"] = "pending"
+    attempt: int = 0
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_ms: int | None = None
+    input_data: dict[str, Any] = Field(default_factory=dict)
+    output_data: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+    generation_mode: str = "not_started"
+
+
+class RunEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sequence: int
+    timestamp: str = Field(default_factory=now_iso)
+    node_id: str
+    kind: str
+    message: str
+    attempt: int = 0
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class LiveRun(BaseModel):
+    """Persisted in the project snapshot, with CAS ownership across workers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(default_factory=lambda: new_id("run"))
+    graph_version: int = 1
+    nodes: dict[str, NodeExecution] = Field(default_factory=dict)
+    events: list[RunEvent] = Field(default_factory=list)
+    event_sequence: int = 0
+    lease_owner: str | None = None
+    lease_until: float = 0
+    # Keep prior attempts available in the node inspector after retry/revision.
+    history: list[NodeExecution] = Field(default_factory=list)
+
+
 class Project(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -172,6 +217,7 @@ class Project(BaseModel):
     metrics: dict[str, Any] = Field(default_factory=dict)
     revision_feedback: str = ""
     error: str | None = None
+    live_run: LiveRun | None = None
 
     @property
     def active_gate(self) -> HumanGate | None:
@@ -190,6 +236,7 @@ class GateResponse(BaseModel):
     decision: Literal["approve", "request_changes", "reject", "pass", "fail"]
     feedback: str = Field(default="", max_length=10_000)
     answers: dict[str, str] = Field(default_factory=dict)
+    request_brd: bool = False
 
 
 class ProjectSummary(BaseModel):
@@ -202,6 +249,7 @@ class ProjectSummary(BaseModel):
     artifact_count: int
     active_gate: str | None
     updated_at: str
+    live: bool = False
 
 
 def summarize(project: Project) -> ProjectSummary:
@@ -216,4 +264,5 @@ def summarize(project: Project) -> ProjectSummary:
         artifact_count=len(project.artifacts),
         active_gate=gate.title if gate else None,
         updated_at=project.updated_at,
+        live=project.live_run is not None,
     )

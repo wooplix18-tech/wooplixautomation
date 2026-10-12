@@ -105,7 +105,7 @@ class WorkflowEngine:
         gate = HumanGate(stage=stage, title=title, description=description, questions=questions, payload=payload)
         project.gates.append(gate)
         project.active_gate_id = gate.id
-        project.status = "requirements_review" if stage == "requirements_confirmation" else "delivery_review" if stage == "delivery_review" else "uat"
+        project.status = "requirements_review" if stage == "requirements_confirmation" else "proposal_review" if stage == "proposal_confirmation" else "delivery_review" if stage == "delivery_review" else "uat"
         self._trace(project, stage, "human_reviewer", "waiting", title, metadata={"gate_id": gate.id})
         return gate
 
@@ -193,6 +193,9 @@ class WorkflowEngine:
 
     def respond(self, project_id: str, gate_id: str, response: GateResponse) -> Project:
         project = self.get(project_id)
+        if project.live_run:
+            from .live import LiveRunner
+            return LiveRunner(self).respond(project_id, gate_id, response)
         gate = next((row for row in project.gates if row.id == gate_id), None)
         if gate is None or gate.status != "pending" or project.active_gate_id != gate_id:
             raise WorkflowError("This human gate is no longer active.")

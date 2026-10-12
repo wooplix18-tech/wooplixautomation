@@ -75,6 +75,14 @@ class ProjectStore:
             ).fetchone()
         return Project.model_validate(json.loads(row["state_json"])) if row else None
 
+    def get_if_changed(self, project_id: str, updated_at: str) -> Project | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT state_json FROM projects WHERE id = ? AND updated_at <> ?",
+                (project_id, updated_at),
+            ).fetchone()
+        return Project.model_validate(json.loads(row["state_json"])) if row else None
+
     def list(self) -> list[Project]:
         with self._lock, self._connect() as connection:
             rows = connection.execute(
@@ -183,6 +191,15 @@ class PostgresProjectStore:
             return None
         state = row["state_json"]
         return Project.model_validate(json.loads(state) if isinstance(state, str) else state)
+
+    def get_if_changed(self, project_id: str, updated_at: str) -> Project | None:
+        self._ensure_initialized()
+        with self._connect() as connection:
+            row = connection.execute(
+                f"SELECT state_json FROM {self.table_name} WHERE id = %s AND updated_at <> %s",
+                (project_id, updated_at),
+            ).fetchone()
+        return Project.model_validate(row["state_json"]) if row else None
 
     def list(self) -> list[Project]:
         self._ensure_initialized()

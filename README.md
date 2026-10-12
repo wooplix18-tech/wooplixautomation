@@ -38,8 +38,10 @@ human checkpoints, durable state, and an auditable workflow trace.
   API contracts, repository structure, and quality gates.
 - **Testing and UAT** — creates traceable test cases, release gates, and a UAT
   script that a client can execute.
-- **Documentation and training** — creates stakeholder, user, technical, and
-  support documentation plans plus a knowledge-transfer checklist.
+- **Documentation and training** — generates a source-linked user guide,
+  proposed technical reference, support triage guide, role-based training
+  practice, and handover checklist. It marks implementation details that still
+  need verification before release.
 - **Conversational intake** — paste one brief, discuss requirements with the
   project assistant, or upload a TXT, Markdown, text-enabled PDF, or DOCX file.
 - **Automatic delivery pack** — generate all seven planning deliverables
@@ -54,6 +56,57 @@ human checkpoints, durable state, and an auditable workflow trace.
   progress, metrics, artifacts, decisions, and the agent trace.
 
 ## Quick start
+
+### Live Workflow Studio
+
+Open **`/workflow`** for the new execution canvas. New projects created from the
+inquiry screen open here immediately, before generation begins. Use **Execute**
+to run successive ready waves or **Step** to run one wave. Click any node or
+connection to inspect its input references, saved output, attempt history and
+events. Pan, zoom, fit and rearrange the canvas without changing dependencies.
+
+The runner saves each node independently with a renewable, database-fenced
+lease. The read-only SSE event stream restores saved progress on refresh and
+reconnect. Retry keeps completed outputs, cancellation discards late results,
+and reviewed mode pauses on real human gates. Automatic planning marks those
+gates skipped; it never reports that UAT was performed.
+
+**On Vercel, live runs require `DATABASE_URL`.** Ephemeral SQLite cannot share
+state reliably between execution and event requests. Local SQLite remains
+supported. No new database table migration is needed for the live-run fields.
+
+To schedule work after the browser closes, run a separate long-lived Python
+worker with the same database environment:
+
+```bash
+.venv/bin/python -m scripts.worker
+```
+
+The worker entrypoint is included; worker hosting is not provisioned by this
+change. A browser alone schedules one HTTP wave at a time. Long nested model
+graphs can still exceed Vercel's function duration; recover interrupted work
+after lease expiry or use the worker on a suitable long-lived host. Nested
+LangGraph milestones are visible, but resume currently operates at the parent
+document-node boundary.
+
+Architecture guide: [docs/WORKFLOW_ARCHITECTURE.md](docs/WORKFLOW_ARCHITECTURE.md).
+Generate its Word version (with three graph diagrams) using:
+
+```bash
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m scripts.export_architecture
+# out/Wooplix-Workflow-Architecture.docx
+```
+
+Browser verification using an isolated database and no model calls:
+
+```bash
+.venv/bin/python -m scripts.browser_flow_smoke
+```
+
+The canvas executes a fixed delivery graph. Editable graph definitions, custom
+connectors, staff authorization and nested durable checkpoints remain roadmap
+items, documented in the architecture guide.
 
 Use Python 3.12 or newer (the tested local/Vercel version is pinned to 3.14 in
 `.python-version`). From the repository root:
@@ -139,14 +192,18 @@ the integrated graph; without the key they use templates. Set
 
 Integrated outputs retain their source links, quality reports and nested graph
 trace. The proposal and BRD supply context to downstream agents. Artifact cards
-now offer Word downloads from saved content; proposal/BRD use the original
-branded renderers. `/api/proposal-agent/workflow` exposes the actual nested
+offer PDF and Word downloads from saved content. PDFs use Dompdf through
+`api/render-pdf.php`. `/api/proposal-agent/workflow` exposes the actual nested
 graph topology without invoking a model.
 
 See [AI_ENGINEERING_REVIEW.md](AI_ENGINEERING_REVIEW.md) for findings and the
 remaining reliability/access-control work. This integration covers the source
-generation core and Word exports. Its separate Telegram delivery, PHP PDF
-service and persistent standalone case API are not enabled in this workspace.
+generation core and document exports. Its separate Telegram delivery and
+persistent standalone case API are not enabled in this workspace.
+
+For local PDF rendering, install PHP 8.1+ and Composer, then run
+`composer install`. Vercel builds the PHP function with the configured
+`vercel-php` runtime; FastAPI calls that renderer when a user downloads a PDF.
 
 Set either `GROQ_API_KEY` with `GROQ_MODEL`, or `OPENAI_API_KEY` with `AI_MODEL`,
 in `.env.local` and Vercel settings. Groq takes precedence if both keys exist.
@@ -158,10 +215,13 @@ are included in provider prompts and recorded in revised artifacts; they do
 not execute application code or guarantee that the requested feature has been
 implemented.
 
-Each provider call can wait up to 45 seconds. Specialist generation runs
-synchronously within the review request. If a request times out, reload the
-project to inspect its saved state before resubmitting a decision. Long-running
-workflows still need a durable job runner and retry/recovery design.
+The lightweight provider adapter allows 45 seconds per call; the imported
+document graph has its own retries and potentially longer overall duration.
+Legacy projects generate synchronously in their review request. New live runs
+execute one ready wave per request or worker cycle and persist each node result.
+If a request times out, inspect the saved run before retrying. Expired leases can
+be recovered, but nested document calls still need finer-grained checkpoints
+and a long-lived worker for reliable unattended operation.
 
 The store creates `automation_projects` and its timestamp index on first use,
 not during entrypoint import/build. Snapshot saves use an optimistic timestamp
@@ -176,6 +236,14 @@ credentials. It does not verify an external model call.
 | `GET /api/health` | Service and provider status |
 | `GET /api/workflow` | Workflow node and edge metadata |
 | `GET /api/agents` | Agent roles, responsibilities, contracts, and execution status |
+| `POST /api/runs` | Queue a live run without calling a model |
+| `GET /api/live/topology` | Fixed execution graph including scope review |
+| `GET /api/projects/{id}/flow` | Compact execution state and incremental events |
+| `GET /api/projects/{id}/events` | SSE progress and replay via Last-Event-ID |
+| `GET /api/projects/{id}/nodes/{node}` | Node input/output and prior attempts |
+| `POST /api/projects/{id}/execute` | Execute one ready parallel wave |
+| `POST /api/projects/{id}/retry` | Recover failed/interrupted nodes |
+| `POST /api/projects/{id}/cancel` | Cancel scheduling and discard late outputs |
 | `POST /api/intake/chat` | Ask an inquiry question and organize the conversation into a project draft |
 | `POST /api/intake/document` | Extract requirements from one uploaded document |
 | `POST /api/projects` | Create a project and extract requirements |
@@ -238,8 +306,7 @@ highest-volume planning and documentation work.
 - `tests/test_workflow.py` — offline lifecycle, revision, persistence, and
   topology checks.
 
-The orchestration state is intentionally compatible with a future LangGraph
-checkpointer migration. The `langgraph` integration is an optional dependency
-in `pyproject.toml`; the current core uses an explicit dependency-aware state
-machine while the agent registry establishes the role, responsibility, input,
-output, tool, and approval contracts that LangGraph nodes will use.
+The top-level live runner uses an explicit dependency graph and persisted
+snapshot checkpoints. Proposal/BRD nodes use the imported LangGraph subgraphs
+when Groq is configured. LangGraph is an installed runtime dependency; nested
+PostgreSQL checkpointers are a separate future step.

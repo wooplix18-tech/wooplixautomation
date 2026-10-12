@@ -135,7 +135,7 @@ def _groq_json(system, payload, max_tokens=6500):
     if not keys:
         raise RuntimeError("The BRD agent needs a configured Groq API key.")
     models = list(dict.fromkeys([brand.GROQ_MODEL, "openai/gpt-oss-120b",
-                                 "openai/gpt-oss-20b"]))
+                                 "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]))
     last_error = None
     for model in models:
         for key in keys:
@@ -147,7 +147,9 @@ def _groq_json(system, payload, max_tokens=6500):
                           "response_format": {"type": "json_object"}}
                 if "gpt-oss" in model:
                     kwargs["reasoning_effort"] = "low"
-                response = Groq(api_key=key, timeout=55, max_retries=0).chat.completions.create(**kwargs)
+                from ..groq_limiter import wait_for_groq_slot
+                wait_for_groq_slot()
+                response = brand.groq_client(key, timeout=55, max_retries=0).chat.completions.create(**kwargs)
                 data = json.loads(response.choices[0].message.content or "{}")
                 if isinstance(data, list):
                     data = {"specification_tables": data}

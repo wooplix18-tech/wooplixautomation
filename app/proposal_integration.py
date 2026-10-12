@@ -5,6 +5,7 @@ import os
 from collections import defaultdict
 
 from .models import Artifact, Project, ProjectInput, RequirementItem
+from . import progress
 
 
 def proposal_engine() -> str:
@@ -65,11 +66,27 @@ class IntegratedDocumentAgent:
                 if key in answers and value.strip():
                     answers[key] = value
         try:
-            result = multi_agent_graph.build_graph().invoke(
-                {"mode": "case", "document_type": self.kind, "requirement": context["requirement"],
-                 "source": context["source"], "context": context, "analysis": context["analysis"],
-                 "answers": answers, "precomputed_context": True, "require_human_review": False,
-                 "trace": [], "repair_count": 0}, {"recursion_limit": 60})
+            initial = {"mode": "case", "document_type": self.kind, "requirement": context["requirement"],
+                  "source": context["source"], "context": context, "analysis": context["analysis"],
+                  "answers": answers, "precomputed_context": True, "require_human_review": False,
+                  "trace": [], "repair_count": 0}
+            graph = multi_agent_graph.build_graph()
+            if not progress.enabled():
+                result = graph.invoke(initial, {"recursion_limit": 60})
+            else:
+                result = {}
+                for mode, update in graph.stream(initial, {"recursion_limit": 60}, stream_mode=["tasks", "updates", "values"]):
+                    if mode == "values":
+                        result = update
+                    elif mode == "tasks" and "input" in update:
+                        progress.emit("subagent_started", f"{update['name']} started.", subagent=update["name"], task_id=update["id"])
+                    elif mode == "updates":
+                        for name, fields in update.items():
+                            if name.startswith("__") or not isinstance(fields, dict):
+                                continue
+                            progress.emit("subagent_completed", f"{name} checkpoint produced.", subagent=name,
+                                          output_fields=list(fields), trace=fields.get("trace", [])[-3:])
+                progress.emit("model_completed", "Proposal-agent graph completed its source and quality checks.", engine="langgraph")
         except Exception as exc:
             raise ValueError("The integrated proposal/BRD agent could not complete generation. Check the provider and retry.") from exc
         key = "proposal" if self.kind == "proposal" else "document"

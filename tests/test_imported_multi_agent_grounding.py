@@ -34,6 +34,20 @@ def proposal():
 
 
 class MultiAgentGroundingTests(unittest.TestCase):
+    def test_proposal_writer_defers_commercial_coverage_until_specialist_enrichment(self):
+        response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='''{
+            "client": {"company_name": "", "project_name": "", "contact": ""},
+            "project_introduction": "Implement Zoho CRM.",
+            "scope": [], "prerequisites": [], "deliverables": [], "open_points": [],
+            "commercials": null, "timeline": null, "status": "DRAFT"
+        }'''))])
+        sections = [{"product": "Zoho CRM", "requirements": ["Lead management"]},
+                    {"product": "Commercial proposal", "requirements": ["CRM"]}]
+        with patch.object(brand, "groq_client") as factory:
+            factory.return_value.chat.completions.create.return_value = response
+            result = brand.draft_proposal("Zoho CRM\nLead management", "", sections)
+        self.assertEqual(result["scope"][0]["product"], "Zoho CRM")
+
     def test_large_brd_critic_packets_have_bounded_input_and_original_paths(self):
         document = {"summary": "A long proposed explanation. " * 700,
                     "specification_tables": [
