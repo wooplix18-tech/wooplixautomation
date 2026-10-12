@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wooplix AI SDLC</title>
+  <style>
+    :root { --ink:#e9eef7; --muted:#93a3bb; --panel:#111a2b; --panel-2:#18243a; --line:#263653; --accent:#66e4c2; --accent-2:#8f7cff; --danger:#ff8c9b; --shadow:0 24px 70px #02061066; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:#08101f; font:14px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+    button, input, textarea, select { font:inherit; }
+    button { cursor:pointer; border:0; }
+    .shell { display:grid; grid-template-columns:300px 1fr; min-height:100vh; }
+    aside { padding:28px 20px; border-right:1px solid var(--line); background:linear-gradient(180deg,#0b1527,#091221); }
+    .brand { display:flex; align-items:center; gap:11px; padding:0 8px 32px; }
+    .logo { width:36px; height:36px; display:grid; place-items:center; border-radius:12px; color:#08101f; font-weight:900; background:linear-gradient(135deg,var(--accent),#73a7ff); }
+    .brand strong { letter-spacing:-.03em; font-size:18px; }
+    .brand small { display:block; color:var(--muted); font-size:10px; letter-spacing:.12em; text-transform:uppercase; }
+    .side-label { color:#5f7392; font-size:10px; letter-spacing:.15em; text-transform:uppercase; padding:0 10px 10px; }
+    .project-list { display:grid; gap:7px; }
+    .project { width:100%; text-align:left; color:var(--ink); padding:12px 11px; border:1px solid transparent; border-radius:10px; background:transparent; }
+    .project:hover,.project.active { background:var(--panel); border-color:var(--line); }
+    .project-name { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-weight:650; }
+    .project-meta { color:var(--muted); font-size:11px; margin-top:3px; }
+    .new-project { width:100%; margin-top:18px; padding:11px; border:1px dashed #3d567d; color:var(--accent); border-radius:10px; background:#0c1729; }
+    main { max-width:1500px; width:100%; padding:34px clamp(20px,4vw,64px) 60px; margin:auto; }
+    .topline { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; margin-bottom:25px; }
+    h1 { margin:0; letter-spacing:-.045em; font-size:clamp(28px,3vw,44px); line-height:1.05; }
+    h2 { margin:0; font-size:20px; letter-spacing:-.025em; }
+    h3 { margin:0 0 10px; font-size:14px; }
+    .eyebrow { margin:0 0 10px; color:var(--accent); letter-spacing:.14em; text-transform:uppercase; font-weight:700; font-size:11px; }
+    .subtitle { color:var(--muted); max-width:680px; margin:12px 0 0; }
+    .badge { display:inline-flex; align-items:center; gap:6px; padding:5px 9px; border-radius:999px; color:#b9c8dd; background:#15223a; font-size:11px; }
+    .badge::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--accent); }
+    .grid { display:grid; gap:16px; grid-template-columns:repeat(12,1fr); }
+    .card { grid-column:span 12; border:1px solid var(--line); border-radius:16px; padding:20px; background:linear-gradient(145deg,#121d31,#0f1829); box-shadow:var(--shadow); }
+    .card.half { grid-column:span 6; }
+    .card.third { grid-column:span 4; }
+    .card-header { display:flex; justify-content:space-between; align-items:center; gap:15px; margin-bottom:17px; }
+    .muted { color:var(--muted); }
+    .small { font-size:12px; }
+    .empty { min-height:56vh; display:grid; place-items:center; text-align:center; }
+    .empty-inner { max-width:560px; }
+    .empty-mark { font-size:44px; margin-bottom:12px; }
+    .button { padding:10px 14px; color:#07121c; border-radius:9px; font-weight:750; background:var(--accent); }
+    .button.secondary { color:var(--ink); background:#1c2b46; }
+    .button.ghost { color:var(--accent); background:transparent; border:1px solid #385174; }
+    .button.danger { color:#220910; background:var(--danger); }
+    .button:disabled { opacity:.5; cursor:not-allowed; }
+    .actions { display:flex; flex-wrap:wrap; gap:8px; }
+    form { display:grid; gap:13px; }
+    .form-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:13px; }
+    label { display:grid; gap:6px; color:#b7c4d7; font-size:12px; font-weight:650; }
+    input, textarea, select { width:100%; color:var(--ink); outline:none; border:1px solid #2b4163; border-radius:8px; background:#0a1425; padding:10px 11px; }
+    input:focus,textarea:focus,select:focus { border-color:var(--accent-2); box-shadow:0 0 0 3px #8f7cff1f; }
+    textarea { resize:vertical; min-height:92px; }
+    .full { grid-column:1/-1; }
+    .steps { display:flex; overflow:auto; gap:0; padding-bottom:6px; }
+    .step { min-width:130px; position:relative; padding:8px 11px 0 0; color:#617696; font-size:11px; }
+    .step:not(:last-child)::after { content:""; height:1px; position:absolute; top:14px; left:20px; right:8px; background:#2b3d5b; }
+    .step-dot { display:block; width:12px; height:12px; position:relative; z-index:1; margin-bottom:8px; border:3px solid #354c70; border-radius:50%; background:#0b1527; }
+    .step.done { color:var(--accent); }.step.done .step-dot { border-color:var(--accent); background:var(--accent); }.step.current { color:var(--ink); }.step.current .step-dot { border-color:var(--accent-2); background:var(--accent-2); }
+    .gate { border-color:#725fff; background:linear-gradient(145deg,#1a1e42,#121a31); }
+    .gate h2 { color:#e4ddff; }.gate .question { margin:8px 0; padding:9px 10px; border-left:2px solid var(--accent-2); background:#111832; color:#c6cce0; }
+    .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; }
+    .stat { padding:13px; border:1px solid var(--line); border-radius:10px; background:#0d1728; }.stat b { display:block; font-size:22px; color:var(--accent); }.stat span { display:block; color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.08em; }
+    .artifact-list { display:grid; grid-template-columns:repeat(2,1fr); gap:9px; }
+    .artifact { padding:12px; border:1px solid var(--line); border-radius:10px; background:#0d1728; }.artifact strong { display:block; font-size:13px; }.artifact small { color:var(--muted); }.artifact button { margin-top:10px; padding:6px 8px; color:var(--accent); border:1px solid #315173; border-radius:6px; background:transparent; font-size:11px; }
+    .trace { display:grid; gap:0; max-height:420px; overflow:auto; }.trace-row { display:grid; grid-template-columns:120px 1fr; gap:13px; padding:10px 0; border-bottom:1px solid #1b2a42; }.trace-row time { color:#6980a2; font-size:11px; }.trace-row strong { display:block; font-size:12px; }.trace-row span { color:var(--muted); font-size:12px; }
+    pre { overflow:auto; max-height:520px; margin:0; padding:15px; border-radius:10px; color:#cbd8ee; background:#091221; font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .toast { position:fixed; right:20px; bottom:20px; max-width:360px; padding:12px 15px; border:1px solid var(--line); border-radius:10px; background:#172641; box-shadow:var(--shadow); }
+    @media (max-width:900px) { .shell { display:block; } aside { border-right:0; border-bottom:1px solid var(--line); padding:16px; } .brand { padding-bottom:16px; }.project-list { display:flex; overflow:auto; }.project { min-width:190px; }.new-project { width:auto; }.card.half,.card.third { grid-column:span 12; } }
+    @media (max-width:580px) { main { padding:24px 14px 40px; }.form-grid { grid-template-columns:1fr; }.stats { grid-template-columns:repeat(2,1fr); }.artifact-list { grid-template-columns:1fr; }.topline { display:block; }.topline .badge { margin-top:15px; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <div class="brand"><div class="logo">W</div><div><strong>Wooplix</strong><small>AI software delivery</small></div></div>
+      <div class="side-label">Projects</div>
+      <div id="project-list" class="project-list"><div class="muted small" style="padding:10px">Loading workspace…</div></div>
+      <button class="new-project" onclick="showCreate()">＋ New project</button>
+    </aside>
+    <main id="main"></main>
+  </div>
+  <div id="toast" hidden class="toast"></div>
+  <script>
+    const stages = [
+      ['client_requirements','Client requirements'],['proposal','Proposal'],['brd','BRD'],['ui_ux','UI/UX'],['implementation','Development'],['qa_uat','Testing & UAT'],['documentation','Docs'],['delivery_review','Review'],['handover','Handover']
+    ];
+    let projects = [], selected = null;
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+    const pretty = value => JSON.stringify(value, null, 2);
+    async function api(path, options={}) { const res = await fetch('/api'+path, {headers:{'Content-Type':'application/json'}, ...options}); const data = await res.json(); if(!res.ok) throw new Error(data.detail || 'Request failed'); return data; }
+    function toast(message) { const node=document.querySelector('#toast'); node.textContent=message; node.hidden=false; setTimeout(()=>node.hidden=true, 3800); }
+    async function loadProjects() { projects=(await api('/projects')).projects; renderProjectList(); if(selected) { const exists=projects.find(p=>p.id===selected.id); if(exists) await selectProject(selected.id); } else if(projects[0]) await selectProject(projects[0].id); else showCreate(); }
+    function renderProjectList() { document.querySelector('#project-list').innerHTML=projects.length ? projects.map(p=>`<button class="project ${selected?.id===p.id?'active':''}" onclick="selectProject('${p.id}')"><div class="project-name">${esc(p.project_name)}</div><div class="project-meta">${esc(p.status.replaceAll('_',' '))} · ${p.artifact_count} artifacts</div></button>`).join('') : '<div class="muted small" style="padding:10px">No projects yet.</div>'; }
+    function showCreate() { selected=null; renderProjectList(); document.querySelector('#main').innerHTML=`<div class="topline"><div><p class="eyebrow">Start with the outcome</p><h1>Turn a brief into a product.</h1><p class="subtitle">A coordinated team of AI agents moves from client requirements through proposal, BRD, design, development, testing, documentation, and handover.</p></div><span class="badge">7 specialist agents · human gates</span></div><div class="card"><div class="card-header"><div><h2>New delivery workspace</h2><div class="muted small">Add enough context for the agents to produce a useful first pass. Unknowns stay visible as open decisions.</div></div></div><form id="create-form"><div class="form-grid"><label>Project name<input name="project_name" required placeholder="e.g. Field service portal"></label><label>Client name<input name="client_name" value="Client"></label><label>Project type<select name="project_type"><option value="website">Website</option><option value="mobile_app">Mobile application</option><option value="software_product" selected>Software product</option><option value="internal_tool">Internal tool</option></select></label><label>Timeline<input name="timeline" placeholder="e.g. Q3 launch"></label><label class="full">Client brief<textarea name="brief" required minlength="20" placeholder="Describe the problem, desired outcome, key capabilities, and how success will be recognized."></textarea></label><label>Business goals<textarea name="goals" placeholder="One goal per line"></textarea></label><label>Target users<textarea name="target_users" placeholder="One user group per line"></textarea></label><label>Platforms<textarea name="platforms" placeholder="Web, iOS, Android, admin…"></textarea></label><label>Integrations<textarea name="integrations" placeholder="CRM, payments, APIs…"></textarea></label><label>Constraints<textarea name="constraints" placeholder="Compliance, brand, budget, technical constraints…"></textarea></label><label>Brand preferences<textarea name="brand_preferences" placeholder="Tone, colors, existing design system…"></textarea></label><label>Budget<input name="budget" placeholder="To be confirmed"></label></div><div class="actions"><button class="button" type="submit">Create workspace →</button><span class="muted small" style="align-self:center">The first step is a scope confirmation gate.</span></div></form></div>`; document.querySelector('#create-form').onsubmit=createProject; }
+    const lines = value => value.split('\n').map(v=>v.trim()).filter(Boolean);
+    async function createProject(event) { event.preventDefault(); const form=new FormData(event.target); const body=Object.fromEntries(form.entries()); ['goals','target_users','platforms','integrations','constraints'].forEach(key=>body[key]=lines(body[key]||'')); try { selected=await api('/projects',{method:'POST',body:JSON.stringify(body)}); await loadProjects(); toast('Workspace created. Review the extracted scope.'); } catch(error) { toast(error.message); } }
+    async function selectProject(id) { try { selected=await api('/projects/'+id); renderProjectList(); renderDetail(); } catch(error) { toast(error.message); } }
+    function stageClass(stage) { const current=selected?.current_stage||''; const currentIndex=stages.findIndex(s=>s[0]===current); const index=stages.findIndex(s=>s[0]===stage); return index<currentIndex || selected?.status==='completed' ? 'done' : index===currentIndex ? 'current' : ''; }
+    function renderSteps() { return `<div class="steps">${stages.map(s=>`<div class="step ${stageClass(s[0])}"><span class="step-dot"></span>${s[1]}</div>`).join('')}</div>`; }
+    function gateCard(gate) { if(!gate) return ''; const isUat=gate.stage==='uat'; return `<div class="card gate"><div class="card-header"><div><p class="eyebrow">Human checkpoint</p><h2>${esc(gate.title)}</h2></div><span class="badge">Action needed</span></div><p class="muted">${esc(gate.description)}</p>${gate.questions.map(q=>`<div class="question">${esc(q)}</div>`).join('')}<form id="gate-form"><label>Feedback / decision notes<textarea name="feedback" placeholder="Add decisions, evidence, or requested changes…"></textarea></label><div class="actions"><button class="button" name="decision" value="${isUat?'pass':'approve'}">${isUat?'Pass UAT & hand over':'Approve & continue'}</button><button class="button secondary" name="decision" value="request_changes">Request changes</button><button class="button danger" name="decision" value="reject">Reject / stop</button></div></form></div>`; }
+    function artifactCard(artifact) { return `<div class="artifact"><strong>${esc(artifact.title)}</strong><small>v${artifact.version} · ${esc(artifact.generated_by.join(', '))}</small><br><button onclick="showArtifact('${artifact.kind}')">Open artifact</button></div>`; }
+    function renderDetail() { if(!selected) return showCreate(); const input=selected.input; const gate=selected.gates.find(g=>g.id===selected.active_gate_id); const metric=selected.metrics||{}; document.querySelector('#main').innerHTML=`<div class="topline"><div><p class="eyebrow">${esc(input.client_name)} · ${esc(input.project_type.replaceAll('_',' '))}</p><h1>${esc(input.project_name)}</h1><p class="subtitle">${esc(input.brief)}</p></div><span class="badge">${esc(selected.status.replaceAll('_',' '))}</span></div><div class="grid"><div class="card">${renderSteps()}</div>${gate?gateCard(gate):''}<div class="card"><div class="card-header"><div><h2>Delivery cockpit</h2><div class="muted small">A source-grounded artifact pack with a visible audit trail.</div></div></div><div class="stats"><div class="stat"><b>${selected.requirements.length}</b><span>requirements</span></div><div class="stat"><b>${selected.artifacts.length}</b><span>artifacts</span></div><div class="stat"><b>${metric.ai_assisted_work_hours_target||'—'}</b><span>AI target hours</span></div><div class="stat"><b>${metric.human_review_hours_target||'—'}</b><span>human target hours</span></div></div></div><div class="card half"><div class="card-header"><h2>Generated work</h2><span class="muted small">${selected.artifacts.length} items</span></div><div class="artifact-list">${selected.artifacts.length?selected.artifacts.map(artifactCard).join(''):'<div class="muted small">Artifacts appear after scope confirmation.</div>'}</div></div><div class="card half"><div class="card-header"><h2>Requirement register</h2><span class="muted small">Stable traceable IDs</span></div><div style="display:grid;gap:8px;max-height:280px;overflow:auto">${selected.requirements.map(item=>`<div class="artifact"><strong>${esc(item.id)} · ${esc(item.category)}</strong><small>${esc(item.statement)}</small></div>`).join('')}</div></div><div class="card half"><div class="card-header"><h2>Agent workflow trace</h2><span class="muted small">${selected.trace.length} events</span></div><div class="trace">${selected.trace.slice().reverse().map(row=>`<div class="trace-row"><time>${new Date(row.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</time><div><strong>${esc(row.agent.replaceAll('_',' '))}</strong><span>${esc(row.message)}</span></div></div>`).join('')}</div></div><div class="card half"><div class="card-header"><h2>Open decisions</h2><span class="muted small">Keep uncertainty explicit</span></div>${(selected.decisions.length?selected.decisions: [{decision:'open',feedback:'Questions are surfaced at each human gate.'}]).map(d=>`<div class="question"><strong>${esc(d.decision)}</strong><br><span class="muted">${esc(d.feedback||'No additional notes')}</span></div>`).join('')}</div></div>`; const gateForm=document.querySelector('#gate-form'); if(gateForm) gateForm.onsubmit=respondGate; }
+    async function respondGate(event) { event.preventDefault(); const decision=event.submitter.value; const feedback=new FormData(event.target).get('feedback')||''; try { selected=await api(`/projects/${selected.id}/gates/${selected.active_gate_id}/respond`,{method:'POST',body:JSON.stringify({decision,feedback})}); await loadProjects(); toast(decision==='request_changes'?'Revision cycle started.':'Decision recorded.'); } catch(error) { toast(error.message); } }
+    async function showArtifact(kind) { try { const artifact=await api(`/projects/${selected.id}/artifacts/${kind}`); document.querySelector('#main').innerHTML=`<div class="topline"><div><p class="eyebrow">Artifact · ${esc(kind)}</p><h1>${esc(artifact.title)}</h1><p class="subtitle">Generated by ${esc(artifact.generated_by.join(', '))} · version ${artifact.version}</p></div><button class="button ghost" onclick="selectProject('${selected.id}')">← Back to cockpit</button></div><div class="card"><pre>${esc(pretty(artifact.content))}</pre></div>`; } catch(error) { toast(error.message); } }
+    loadProjects().catch(error=>toast(error.message));
+  </script>
+</body>
+</html>
