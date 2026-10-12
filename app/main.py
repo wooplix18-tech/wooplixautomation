@@ -13,7 +13,12 @@ from .storage import ProjectStore
 from .workflow import WorkflowEngine, WorkflowError, workflow_topology
 
 
-DB_PATH = os.getenv("AUTOMATION_DB_PATH", "data/automation.db")
+# Vercel functions have a read-only deployment bundle. /tmp is writable, but
+# ephemeral; configure a hosted database before using multiple production
+# instances. Local development keeps the durable SQLite default.
+DB_PATH = os.getenv("AUTOMATION_DB_PATH") or (
+    "/tmp/automation.db" if os.getenv("VERCEL") == "1" else "data/automation.db"
+)
 store = ProjectStore(DB_PATH)
 engine = WorkflowEngine(store)
 app = FastAPI(title="Wooplix AI SDLC", version="0.1.0", description="Multi-agent software delivery orchestration")

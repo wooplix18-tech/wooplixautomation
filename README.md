@@ -66,6 +66,35 @@ handover record.
 The database is created at `data/automation.db`. Set `AUTOMATION_DB_PATH` to a
 different location for a separate workspace or test run.
 
+## Deploy on Vercel
+
+The repository includes `api/index.py` and `vercel.json` so Vercel can detect
+the FastAPI serverless function. Import
+`wooplix18-tech/wooplixautomation` into Vercel with the repository root as the
+project root, then deploy. The Python function serves both the API and the
+browser cockpit.
+
+For a first deployment, Vercel uses `/tmp/automation.db` when `VERCEL=1` so
+the function can start on its writable filesystem. Vercel `/tmp` storage is
+ephemeral and is not a production database. Configure a hosted PostgreSQL or
+other durable store before relying on project persistence across serverless
+instances; the local SQLite store remains the development implementation.
+
+Recommended environment variables in Vercel:
+
+```text
+VERCEL=1
+GROQ_API_KEY=<optional>
+GROQ_MODEL=llama-3.3-70b-versatile
+```
+
+After deployment, verify:
+
+```text
+https://YOUR-VERCEL-DOMAIN/api/health
+https://YOUR-VERCEL-DOMAIN/
+```
+
 ## Optional AI provider
 
 Copy `.env.example` to `.env` or export variables in the shell. Either an
